@@ -1,9 +1,20 @@
 import { Router } from 'express';
-import { getWeather } from '../controllers/weather.controller';
+import {
+  getCurrentWeatherByCoords,
+  getDailyForecastByCoords,
+  getHourlyForecastByCoords,
+  getWeather,
+} from '../controllers/weather.controller';
 import { validateAccessToken } from '../middleware/auth0.middleware';
 
 const weatherRouter = Router();
 
+// Legacy endpoint: ranked weather data and Comfort Index (Auth0 protected)
 weatherRouter.get('/weather', validateAccessToken, getWeather);
+
+// Coordinate-based endpoints
+weatherRouter.get('/weather/current', getCurrentWeatherByCoords);
+weatherRouter.get('/weather/hourly', getHourlyForecastByCoords);
+weatherRouter.get('/weather/daily', getDailyForecastByCoords);
 
 export default weatherRouter;
