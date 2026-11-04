@@ -6,7 +6,7 @@ function UserHeader() {
   return (
     <header className="app-header user-header">
       <div>
-        <h1>Weather Analytics</h1>
+        <h1>Weatherly</h1>
         <span className="user-name">{user?.name ?? user?.email}</span>
       </div>
 

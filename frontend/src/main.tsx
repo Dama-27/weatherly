@@ -29,7 +29,7 @@ createRoot(document.getElementById('root')!).render(
       </Auth0Provider>
     ) : (
       <main className="login-container">
-        <h1>Weather Analytics</h1>
+        <h1>Weatherly</h1>
         <div className="login-card">
           <p style={{ color: '#dc2626' }}>
             Missing Auth0 configuration in <code>frontend/.env</code>.

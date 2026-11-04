@@ -66,7 +66,7 @@ function App() {
   if (isLoading) {
     return (
       <main className="login-container">
-        <h1>Weather Analytics</h1>
+        <h1>Weatherly</h1>
         <Loading />
       </main>
     );
@@ -75,7 +75,7 @@ function App() {
   if (!isAuthenticated) {
     return (
       <main className="login-container">
-        <h1>Weather Analytics</h1>
+        <h1>Weatherly</h1>
         {!authError && <p>Please log in to access the weather comfort dashboard.</p>}
         <div className="login-card">
           <AuthButtons />

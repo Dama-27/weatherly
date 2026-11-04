@@ -1,4 +1,4 @@
-# Fidenz Weather Analytics
+# Weatherly
 
 A full-stack weather analytics application built for the Fidenz Training Software Engineer assignment.
 
@@ -194,7 +194,7 @@ The following pre-created test user can be used to log in:
 ## Project Structure
 
 ```text
-weather-analytics/
+weatherly/
 ├── data/
 │   └── cities.json              # City list with CityCodes
 ├── backend/
