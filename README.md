@@ -1,70 +1,66 @@
 # Weatherly
 
-A full-stack weather analytics application built for the Fidenz Training Software Engineer assignment.
+Weatherly is a modernized full-stack weather intelligence and personal dashboard application. It provides real-time conditions, interactive 24-hour hourly forecasts, 7-day extended forecasts, and an algorithmic Comfort Index (0–100) across global cities.
 
-The application fetches current weather data for a list of cities from the OpenWeatherMap API, calculates a custom Comfort Index score (from 0 to 100) on the backend using four weather parameters, and ranks the cities from most comfortable to least comfortable. The dashboard is built with React and TypeScript, fully responsive, and secured with Auth0 authentication on both the frontend and backend.
-
----
-
-## Tech Stack
-
-- **Frontend:** React 19, TypeScript, Vite, `@auth0/auth0-react`
-- **Backend:** Node.js, Express, TypeScript, `express-oauth2-jwt-bearer`, `node-cache`
-- **Testing:** Vitest
-- **External Services:** OpenWeatherMap API, Auth0
+The application is powered by an Open-Meteo weather backend with normalized domain models and provider abstraction, paired with a modern React 19 + TypeScript frontend featuring dynamic weather condition themes and interactive visualizations.
 
 ---
 
-## Features
+## Architecture Overview
 
-- **City List:** Loads city IDs and names from `data/cities.json`.
-- **Weather Integration:** Calls OpenWeatherMap API (`/data/2.5/weather?id={cityCode}`) to get live temperature, feels-like temperature, humidity, wind speed, and rain.
-- **Backend Comfort Index:** Calculates a 0–100 integer score evaluating how comfortable the weather feels for each city.
-- **City Ranking:** Sorts cities by comfort score and assigns ranks (Rank 1 = best conditions).
-- **Two-Level In-Memory Caching (5-minute TTL):**
-  - Caches raw weather data per city (`weather:{cityCode}`) to avoid redundant API calls.
-  - Caches the final processed ranking list (`weather:analytics`) for fast responses.
-  - Endpoints to inspect cache hit/miss statistics and manually clear the cache.
-- **Auth0 Security:**
-  - Frontend Single Page App login using PKCE flow.
-  - Backend API protected with JWT Bearer token validation (RS256 signature, audience, and issuer verification).
-  - Tokens kept in memory by the Auth0 SDK to avoid XSS storage vulnerabilities.
-- **Responsive Dashboard:**
-  - Desktop: Full data table with all metrics and comfort score.
-  - Mobile: Card-based view with clean layout on smaller screens.
-  - Sorting: Sort cities by Rank, Comfort Score, Temperature, or City Name.
-- **Automated Tests:** Unit tests covering the Comfort Index calculation, ideal values, extreme weather penalties, and integer range bounds.
-
----
-
-## Comfort Index Formula
-
-The comfort calculation is implemented on the backend in `backend/src/services/comfort-index.service.ts`.
-
-It uses four normalized weather parameters with weighted contributions:
+Weatherly adopts a clean layered architecture designed for provider independence and high resilience:
 
 ```text
-Comfort Score = (Temperature Score * 0.50) + (Humidity Score * 0.30) + (Wind Score * 0.10) + (Rain Score * 0.10)
+┌────────────────────────────────────────────────────────┐
+│               React 19 + TypeScript SPA                 │
+│  - Location Search & Geolocation Selector              │
+│  - Dynamic Weather Theming Engine (Day/Night & WMO)     │
+│  - Recharts Dual-Axis 24-Hour Forecast Chart           │
+│  - 7-Day Forecast with Relative Range & UV Badges      │
+│  - Auth0 PKCE Authentication & Preserved Rankings View │
+└───────────────────────────┬────────────────────────────┘
+                            │ /api/* (Vite Proxy / HTTP)
+┌───────────────────────────▼────────────────────────────┐
+│              Express 5 + TypeScript Backend            │
+│  - REST Controllers (Weather, Location, Cache)         │
+│  - Auth0 JWT Bearer Token Middleware                   │
+│  - Coordinate & Query Validation Layer                 │
+│  - Multi-tier In-Memory Cache (node-cache, 300s TTL)   │
+└───────────────────────────┬────────────────────────────┘
+                            │ Provider Abstraction (IWeatherProvider)
+┌───────────────────────────▼────────────────────────────┐
+│             Provider Adapters & External APIs          │
+│  - OpenMeteoProvider (Default: Forecast & Geocoding)   │
+│  - OpenWeatherMapAdapter (Legacy Compatibility)        │
+│  - Normalized Domain Models (WMO Code Mappings)        │
+└────────────────────────────────────────────────────────┘
 ```
 
-The final score is clamped between 0 and 100 and rounded to the nearest integer.
+### Core Design Principles
+1. **Provider Independence:** Business logic and API contracts depend exclusively on normalized domain models (`CurrentWeather`, `HourlyForecast`, `DailyForecast`, `LocationInfo`), completely decoupling the application from vendor-specific response payloads.
+2. **Provider Factory:** The backend instantiates weather providers via `createWeatherProvider()`, allowing configuration via `WEATHER_PROVIDER=open-meteo` (default) or `openweathermap`.
+3. **Backward Compatibility:** Preserves the legacy `/api/weather` endpoint, city ranking logic, and the 10-city Comfort Index dashboard alongside the modern personal weather view.
+4. **Resilience & Sanitization:** Centralized error handling traps network timeouts (504) and provider failures (502) while preventing internal error traces or credentials from leaking to clients.
 
-### Parameter Breakdown
+---
 
-| Parameter | Weight | Ideal Condition (Score 100) | How It Is Scored |
-|---|---|---|---|
-| **Feels-Like Temperature** | 50% | 24°C – 26°C | Drops gradually as temperature moves away from the ideal range. Temperatures below 5°C or above 36°C score 0. |
-| **Humidity** | 30% | 40% – 60% | Ideal range gives 100. Higher humidity (muggy) and very low humidity (dry) reduce the score. |
-| **Wind Speed** | 10% | 5 – 15 km/h | Light breeze scores 100. Calm air scores 60, while strong winds (>30 km/h) reduce the score. |
-| **Rain (Past 1 Hour)** | 10% | 0 mm | Dry conditions give 100. Any rain decreases the score, with heavy rain (>10 mm) scoring 5. |
+## Technology Stack
 
-### Testing Live Parameter Changes (Video Recording)
-
-To demonstrate how the ranking adapts to parameter changes:
-1. Open `backend/src/services/comfort-index.service.ts`.
-2. Change the weights (for example, set the temperature weight to `0.70` and humidity to `0.10`).
-3. Send a request to `DELETE /api/cache` (or restart the backend server) to clear the cached results.
-4. Refresh the frontend to see the updated city rankings.
+- **Frontend:**
+  - React 19, TypeScript, Vite
+  - Visualizations: Recharts (`ComposedChart`, `Area`, `Line`, `Bar`)
+  - Authentication: `@auth0/auth0-react`
+  - Code Quality: Oxlint, Node Native Test Runner (`node:test`)
+  - Styling: Pure CSS with CSS custom properties, responsive grid/flexbox, and dynamic gradients
+- **Backend:**
+  - Node.js (v24 LTS / v20+), Express 5, TypeScript
+  - Security & Auth: `express-oauth2-jwt-bearer`
+  - Caching: `node-cache` (TTL-based in-memory cache)
+  - Testing: Vitest
+- **External Providers & APIs:**
+  - **Open-Meteo API:** Hourly, daily, and current weather forecasts
+  - **Open-Meteo Geocoding API:** Location search and coordinate resolution
+  - **Auth0:** Universal Login with PKCE flow
 
 ---
 
@@ -72,12 +68,21 @@ To demonstrate how the ranking adapts to parameter changes:
 
 Base URL: `http://localhost:3000`
 
+### 1. Modern Location & Weather Endpoints
 | Method | Endpoint | Description | Auth Required |
 |---|---|---|---|
-| GET | `/health` | Server health check | No |
-| GET | `/api/weather` | Returns ranked weather data and comfort scores | Yes (Bearer token) |
-| GET | `/api/cache/status` | Returns cache statistics (hits, misses, cached keys) | Yes (Bearer token) |
-| DELETE | `/api/cache` | Clears the cache and resets statistics | Yes (Bearer token) |
+| `GET` | `/api/locations/search?q={query}&limit={n}` | Searches global locations via Open-Meteo geocoding | Optional |
+| `GET` | `/api/weather/current?lat={lat}&lon={lon}&name={name}` | Returns normalized current conditions and location metadata | Optional |
+| `GET` | `/api/weather/hourly?lat={lat}&lon={lon}&name={name}` | Returns next 24 hours of hourly forecast with timezone | Optional |
+| `GET` | `/api/weather/daily?lat={lat}&lon={lon}&name={name}` | Returns 7-day daily forecast (min/max temp, UV max, rain sum) | Optional |
+
+### 2. Preserved Legacy & System Endpoints
+| Method | Endpoint | Description | Auth Required |
+|---|---|---|---|
+| `GET` | `/health` | Server health check | No |
+| `GET` | `/api/weather` | Returns 10-city ranked weather data and Comfort Scores | Yes (Bearer token) |
+| `GET` | `/api/cache/status` | Returns cache statistics (hits, misses, cached keys) | Yes (Bearer token) |
+| `DELETE` | `/api/cache` | Clears all cached weather data and resets statistics | Yes (Bearer token) |
 
 Protected endpoints expect the Auth0 Access Token in the request header:
 ```text
@@ -86,135 +91,104 @@ Authorization: Bearer <access_token>
 
 ---
 
-## Getting Started
+## Comfort Index Formula
+
+The heuristic Comfort Score (0–100) evaluates four surface parameters:
+```text
+Comfort Score = (Temperature Score * 0.50) + (Humidity Score * 0.30) + (Wind Score * 0.10) + (Rain Score * 0.10)
+```
+
+- **Feels-Like Temperature (50%):** Ideal range 24°C–26°C (score 100). Drops gradually outside this zone.
+- **Humidity (30%):** Ideal range 40%–60% (score 100). Penalizes dry air and high humidity.
+- **Wind Speed (10%):** Ideal range 5–15 km/h (score 100). Calm air scores 60; strong winds (>30 km/h) are penalized.
+- **Rain (10%):** 0 mm scores 100; precipitation progressively lowers the score.
+
+---
+
+## Environment Configuration
+
+### Backend (`backend/.env`)
+Create `backend/.env` using the following reference:
+```env
+PORT=3000
+WEATHER_PROVIDER=open-meteo
+AUTH0_DOMAIN=your-tenant.us.auth0.com
+AUTH0_AUDIENCE=https://weather-analytics-api
+
+# Optional: only needed if WEATHER_PROVIDER=openweathermap
+OPENWEATHER_API_KEY=your_openweathermap_key_here
+```
+
+### Frontend (`frontend/.env`)
+Create `frontend/.env` using the following reference:
+```env
+VITE_API_TARGET_URL=http://localhost:3000
+VITE_API_URL=/api
+VITE_AUTH0_DOMAIN=your-tenant.us.auth0.com
+VITE_AUTH0_CLIENT_ID=your_auth0_client_id_here
+VITE_AUTH0_AUDIENCE=https://weather-analytics-api
+```
+
+---
+
+## Local Development Instructions
 
 ### Prerequisites
-
-- Node.js (v18 or higher)
+- Node.js (v20+ or v24 LTS recommended)
 - npm
-- OpenWeatherMap API key
-- Auth0 account with a Single Page Application and API configured
 
----
-
-### Backend Setup
-
-1. Navigate to the backend directory and install dependencies:
-   ```bash
-   cd backend
-   npm install
-   ```
-
-2. Create a `.env` file in the `backend/` folder (or copy from `.env.example`):
-   ```env
-   PORT=3000
-   OPENWEATHER_API_KEY=your_openweathermap_api_key_here
-   AUTH0_DOMAIN=your-tenant.us.auth0.com
-   AUTH0_AUDIENCE=https://weather-analytics-api
-   ```
-
-3. Start the backend development server:
-   ```bash
-   npm run dev
-   ```
-   The backend will start on `http://localhost:3000`.
-
-4. Run backend tests:
-   ```bash
-   npm test
-   ```
-
-5. Build backend:
-   ```bash
-   npm run build
-   ```
-
----
-
-### Frontend Setup
-
-1. Navigate to the frontend directory and install dependencies:
-   ```bash
-   cd frontend
-   npm install
-   ```
-
-2. Create a `.env` file in the `frontend/` folder (or copy from `.env.example`):
-   ```env
-   VITE_API_TARGET_URL=http://localhost:3000
-   VITE_API_URL=/api
-   VITE_AUTH0_DOMAIN=your-tenant.us.auth0.com
-   VITE_AUTH0_CLIENT_ID=your_auth0_client_id_here
-   VITE_AUTH0_AUDIENCE=https://weather-analytics-api
-   ```
-
-3. Start the frontend development server:
-   ```bash
-   npm run dev
-   ```
-   The application will run on `http://localhost:5173`. The Vite proxy will route `/api/*` calls to the backend on port 3000.
-
-4. Run lint and build checks:
-   ```bash
-   npm run lint
-   npm run build
-   ```
-
----
-
-## Test User Credentials
-
-The following pre-created test user can be used to log in:
-
-- **Email:** `careers@fidenz.com`
-- **Password:** `Pass#fidenz`
-
----
-
-## Trade-offs and Limitations
-
-1. **In-Memory Cache vs. Redis:**
-   - I used `node-cache` to keep setup simple with zero extra infrastructure requirements.
-   - Trade-off: The cache is stored in the Node.js process memory, so it clears if the backend restarts. In a real production deployment with multiple server instances, a shared Redis cache would be needed.
-
-2. **5-Minute Cache TTL vs. Data Freshness:**
-   - Weather data is cached for 300 seconds (5 minutes).
-   - Trade-off: Weather conditions change slowly, so 5 minutes is a good balance between data accuracy and staying well within OpenWeatherMap's free tier rate limits (60 calls/minute).
-
-3. **Comfort Formula Simplification:**
-   - The Comfort Index is a heuristic based on four surface parameters (temperature, humidity, wind, rain).
-   - Trade-off: Professional biometeorological indices (like PMV or UTCI) require extra metrics such as solar radiation, clothing level, and metabolic rate, which standard weather APIs do not provide. This weighted formula provides a predictable and practical 0–100 approximation.
-
-4. **Token Storage in Memory:**
-   - Auth0 access tokens are held in JavaScript memory by the Auth0 React SDK rather than in `localStorage` or `sessionStorage`.
-   - Trade-off: This prevents token theft via Cross-Site Scripting (XSS). The trade-off is that tokens are re-requested silently in the background on hard page reloads.
-
----
-
-## Project Structure
-
-```text
-weatherly/
-├── data/
-│   └── cities.json              # City list with CityCodes
-├── backend/
-│   ├── src/
-│   │   ├── config/env.ts        # Environment variable loading & validation
-│   │   ├── middleware/          # Auth0 JWT verification middleware
-│   │   ├── controllers/         # Weather and cache route controllers
-│   │   ├── services/            # Weather fetching, analytics, comfort scoring, cache
-│   │   ├── common/              # Normalization functions for weather metrics
-│   │   ├── routes/              # Express route definitions
-│   │   └── types/               # TypeScript interfaces
-│   ├── .env.example
-│   └── package.json
-└── frontend/
-    ├── src/
-    │   ├── components/          # WeatherTable, WeatherCard, UserHeader, AuthButtons, Loading
-    │   ├── services/            # Weather API service with Bearer token header
-    │   ├── types/               # UI weather interfaces
-    │   └── App.tsx              # Main dashboard view with auth & sorting
-    ├── .env.example
-    ├── vite.config.ts           # Vite dev server & proxy setup
-    └── package.json
+### 1. Backend Setup
+```bash
+cd backend
+npm install
+npm run dev
 ```
+The backend server runs on `http://localhost:3000`.
+
+### 2. Frontend Setup
+```bash
+cd frontend
+npm install
+npm run dev
+```
+The frontend Vite server runs on `http://localhost:5173`. API requests (`/api/*`) are proxied automatically to `http://localhost:3000`.
+
+---
+
+## Test & Quality Verification Commands
+
+### Backend
+Execute the Vitest suite and compile TypeScript:
+```bash
+cd backend
+npm test        # Runs all 11 test suites (75 unit & integration tests)
+npm run build   # Typechecks and builds backend with tsc
+```
+
+### Frontend
+Execute linting, unit tests, and production build:
+```bash
+cd frontend
+npm run lint    # Runs oxlint static analysis
+npm test        # Runs unit tests via Node native test runner (node:test)
+npm run build   # Typechecks (tsc -b) and bundles production client with Vite
+```
+
+---
+
+## Weather Data Attribution
+
+Weather forecast data and geocoding services are provided by **[Open-Meteo](https://open-meteo.com/)** under the [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) license. Open-Meteo utilizes open weather model data from national weather services including ECMWF, NOAA, DWD, and JMA.
+
+---
+
+## Known Limitations & Planned Enhancements
+
+1. **In-Memory Caching:**
+   - Caching is managed in-process using `node-cache`. Cache entries do not persist across process restarts. Shared Redis caching is recommended for multi-instance production environments.
+2. **Cloud Infrastructure:**
+   - AWS infrastructure (ECS/Lambda, S3/CloudFront, API Gateway, CDK/Terraform) has not yet been provisioned and is scheduled for subsequent deployment milestones.
+3. **Offline / Service Worker Support:**
+   - Client requires an active internet connection for real-time forecast and search updates. Progressive Web App (PWA) offline caching is slated for future enhancement.
+4. **Geocoding Disambiguation:**
+   - Open-Meteo geocoding search results prioritize by population; small localities with identical names may require country or region filtering.

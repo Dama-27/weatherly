@@ -7,7 +7,7 @@ import type {
   WeatherResult,
 } from '../types/weather';
 
-const API_URL = import.meta.env.VITE_API_URL || '/api';
+const API_URL = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_URL) || '/api';
 
 export interface WeatherData {
   id?: number;

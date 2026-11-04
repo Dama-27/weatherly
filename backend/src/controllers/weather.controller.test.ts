@@ -5,6 +5,7 @@ import {
   getCurrentWeatherByCoords,
   getDailyForecastByCoords,
   getHourlyForecastByCoords,
+  getWeather,
 } from './weather.controller';
 
 function createMockReqRes(query: Record<string, any> = {}) {
@@ -240,6 +241,40 @@ describe('Weather Controller (Coordinate-based APIs)', () => {
       const { req, res, getStatusCode } = createMockReqRes({ lat: '7.20' });
       await getDailyForecastByCoords(req, res);
       expect(getStatusCode()).toBe(400);
+    });
+  });
+
+  describe('GET /api/weather (Legacy 10-City Comfort Index Endpoint)', () => {
+    it('returns ranked weather results for predefined cities with comfort scores', async () => {
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: vi.fn().mockResolvedValue(mockOpenMeteoPayload),
+      } as unknown as Response);
+
+      const { req, res, getStatusCode, getBody } = createMockReqRes();
+      await getWeather(req, res);
+
+      expect(getStatusCode()).toBe(200);
+      const body = getBody();
+      expect(body).toHaveProperty('data');
+      expect(Array.isArray(body.data)).toBe(true);
+      expect(body.data.length).toBeGreaterThan(0);
+
+      // Verify ranking structure and ordering
+      const first = body.data[0];
+      expect(first).toHaveProperty('rank');
+      expect(first.rank).toBe(1);
+      expect(first).toHaveProperty('comfortIndex');
+      expect(typeof first.comfortIndex).toBe('number');
+      expect(first).toHaveProperty('weatherData');
+      expect(first).toHaveProperty('normalizedWeather');
+
+      // Verify rankings are sorted in descending order of comfort score
+      for (let i = 1; i < body.data.length; i++) {
+        expect(body.data[i - 1].comfortIndex).toBeGreaterThanOrEqual(body.data[i].comfortIndex);
+        expect(body.data[i].rank).toBe(i + 1);
+      }
     });
   });
 });
