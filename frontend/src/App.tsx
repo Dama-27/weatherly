@@ -15,6 +15,7 @@ import {
   getHourlyForecast,
   getWeatherData,
 } from './services/weather.service';
+import { getWeatherTheme } from './utils/weather-theme';
 import type {
   CurrentWeather,
   DailyForecast,
@@ -241,6 +242,21 @@ export default function App() {
     }
   }, [rankings, sortBy]);
 
+  // Centralized dynamic weather theme
+  const weatherTheme = useMemo(() => {
+    if (!currentWeather) return undefined;
+    return getWeatherTheme(currentWeather.conditionCode, currentWeather.isDay);
+  }, [currentWeather]);
+
+  const appShellStyle = useMemo(() => {
+    if (!weatherTheme) return undefined;
+    return {
+      '--dynamic-theme-accent': weatherTheme.accentColor,
+      '--dynamic-theme-border': weatherTheme.cardBorder,
+      '--dynamic-theme-bg-tint': weatherTheme.bgTint,
+    } as React.CSSProperties;
+  }, [weatherTheme]);
+
   // Auth0 Loading screen
   if (isLoading) {
     return (
@@ -270,7 +286,10 @@ export default function App() {
   }
 
   return (
-    <div className="app-shell">
+    <div
+      className={`app-shell ${weatherTheme ? `theme-${weatherTheme.id}` : ''}`}
+      style={appShellStyle}
+    >
       <UserHeader
         onSelectLocation={handleSelectLocation}
         onRequestCurrentLocation={handleRequestCurrentLocation}
@@ -320,16 +339,18 @@ export default function App() {
                 <CurrentWeatherSection
                   weather={currentWeather}
                   todayForecast={dailyForecast[0]}
+                  theme={weatherTheme}
                 />
 
                 {/* Weather Metrics Grid */}
                 <WeatherMetricsGrid weather={currentWeather} />
 
-                {/* 24-Hour Hourly Forecast Strip */}
+                {/* 24-Hour Hourly Forecast Section (Chart / Cards) */}
                 <HourlyForecastSection
                   hourly={hourlyForecast}
                   timezone={currentWeather.location.timezone}
                   loading={weatherLoading}
+                  theme={weatherTheme}
                 />
 
                 {/* 7-Day Forecast Section */}

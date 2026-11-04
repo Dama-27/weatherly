@@ -1,14 +1,17 @@
 import WeatherIcon from './WeatherIcon';
 import type { CurrentWeather, DailyForecast } from '../types/weather';
+import type { WeatherTheme } from '../utils/weather-theme';
 
 interface CurrentWeatherSectionProps {
   weather: CurrentWeather;
   todayForecast?: DailyForecast;
+  theme?: WeatherTheme;
 }
 
 export default function CurrentWeatherSection({
   weather,
   todayForecast,
+  theme,
 }: CurrentWeatherSectionProps) {
   // Format observation time
   const formatObservationTime = (isoString: string, timezone?: string) => {
@@ -31,14 +34,32 @@ export default function CurrentWeatherSection({
   const lowTemp = todayForecast?.minTemperatureCelsius;
 
   return (
-    <section className="current-weather-hero">
+    <section
+      className="current-weather-hero"
+      style={
+        theme
+          ? {
+              background: theme.heroGradient,
+              color: theme.heroText,
+            }
+          : undefined
+      }
+    >
       <div className="hero-primary">
         <div className="location-heading">
           <h2>{weather.location.name}</h2>
           {weather.location.country && (
-            <span className="location-country">{weather.location.country}</span>
+            <span
+              className="location-country"
+              style={theme ? { color: theme.heroSubtext } : undefined}
+            >
+              {weather.location.country}
+            </span>
           )}
-          <p className="observation-time">
+          <p
+            className="observation-time"
+            style={theme ? { color: theme.heroSubtext } : undefined}
+          >
             {formatObservationTime(weather.timestamp, weather.location.timezone)}
           </p>
         </div>
@@ -50,11 +71,17 @@ export default function CurrentWeatherSection({
           </div>
 
           <div className="temp-details">
-            <span className="feels-like">
+            <span
+              className="feels-like"
+              style={theme ? { color: theme.heroSubtext } : undefined}
+            >
               Feels like <strong>{Math.round(weather.feelsLikeCelsius)}°C</strong>
             </span>
             {(highTemp != null || lowTemp != null) && (
-              <span className="high-low">
+              <span
+                className="high-low"
+                style={theme ? { color: theme.heroSubtext } : undefined}
+              >
                 {highTemp != null && <span>H: {Math.round(highTemp)}°</span>}
                 {highTemp != null && lowTemp != null && <span> · </span>}
                 {lowTemp != null && <span>L: {Math.round(lowTemp)}°</span>}
@@ -77,4 +104,3 @@ export default function CurrentWeatherSection({
     </section>
   );
 }
-

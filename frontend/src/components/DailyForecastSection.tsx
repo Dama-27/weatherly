@@ -6,6 +6,14 @@ interface DailyForecastSectionProps {
   loading?: boolean;
 }
 
+function getUvBadgeClass(uv: number): string {
+  if (uv <= 2) return 'uv-low';
+  if (uv <= 5) return 'uv-moderate';
+  if (uv <= 7) return 'uv-high';
+  if (uv <= 10) return 'uv-very-high';
+  return 'uv-extreme';
+}
+
 export default function DailyForecastSection({
   daily,
   loading = false,
@@ -42,7 +50,7 @@ export default function DailyForecastSection({
     return null;
   }
 
-  // Calculate global min and max across all 7 days for relative range bars
+  // Calculate global min and max across all 7 days for a consistent visual temperature scale
   const allMins = daily.map((d) => d.minTemperatureCelsius);
   const allMaxs = daily.map((d) => d.maxTemperatureCelsius);
   const globalMin = Math.min(...allMins);
@@ -58,11 +66,23 @@ export default function DailyForecastSection({
           const minT = Math.round(item.minTemperatureCelsius);
           const maxT = Math.round(item.maxTemperatureCelsius);
 
-          // Calculate bar percentage offsets
-          const leftPercent = Math.max(0, Math.min(100, ((item.minTemperatureCelsius - globalMin) / rangeSpan) * 100));
-          const widthPercent = Math.max(8, Math.min(100 - leftPercent, ((item.maxTemperatureCelsius - item.minTemperatureCelsius) / rangeSpan) * 100));
+          // Calculate bar percentage offsets for consistent visual scale
+          const leftPercent = Math.max(
+            0,
+            Math.min(100, ((item.minTemperatureCelsius - globalMin) / rangeSpan) * 100)
+          );
+          const widthPercent = Math.max(
+            8,
+            Math.min(
+              100 - leftPercent,
+              ((item.maxTemperatureCelsius - item.minTemperatureCelsius) / rangeSpan) * 100
+            )
+          );
 
-          const hasRain = item.precipitationProbabilityMaxPercent != null && item.precipitationProbabilityMaxPercent > 0;
+          const hasRain =
+            item.precipitationProbabilityMaxPercent != null &&
+            item.precipitationProbabilityMaxPercent > 0;
+          const uvVal = item.uvIndexMax != null ? Math.round(item.uvIndexMax) : null;
 
           return (
             <div key={`${item.date}-${index}`} className="daily-row">
@@ -80,19 +100,33 @@ export default function DailyForecastSection({
                   description={item.description}
                 />
                 <span className="daily-desc">{item.description}</span>
-                {hasRain && (
-                  <span className="daily-rain-chance">
+              </div>
+
+              <div className="daily-badges-col">
+                {hasRain ? (
+                  <span className="daily-rain-chance" title={`Precipitation probability: ${item.precipitationProbabilityMaxPercent}%`}>
                     <svg width="10" height="10" viewBox="0 0 24 24" fill="#38bdf8">
                       <path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z" />
                     </svg>
                     {item.precipitationProbabilityMaxPercent}%
+                  </span>
+                ) : (
+                  <span className="daily-badge-placeholder" />
+                )}
+
+                {uvVal != null && (
+                  <span
+                    className={`daily-uv-badge ${getUvBadgeClass(uvVal)}`}
+                    title={`Maximum UV Index: ${uvVal}`}
+                  >
+                    UV {uvVal}
                   </span>
                 )}
               </div>
 
               <div className="daily-range-col">
                 <span className="temp-low">{minT}°</span>
-                <div className="temp-bar-bg">
+                <div className="temp-bar-bg" title={`Range: ${minT}°C – ${maxT}°C`}>
                   <div
                     className="temp-bar-fill"
                     style={{
@@ -110,4 +144,3 @@ export default function DailyForecastSection({
     </section>
   );
 }
-
