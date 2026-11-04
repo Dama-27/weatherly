@@ -3,6 +3,8 @@ export interface City {
     CityName: string;
     Temp: string;
     Status: string;
+    lat?: number;
+    lon?: number;
 }
 
 export interface CitiesPayload {

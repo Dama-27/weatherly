@@ -1,4 +1,4 @@
-import { kelvinToCelsius, mpsToKmh, roundTo } from '../common/units';
+import { celsiusToKelvin, kelvinToCelsius, kmhToMps, mpsToKmh, roundTo } from '../common/units';
 import type { CurrentWeather, DayNightIndicator, LocationInfo } from '../types/weather-domain.types';
 import type { WeatherData } from '../types/weather.types';
 
@@ -88,5 +88,50 @@ export function mapOpenWeatherToCurrentWeather(
     isDay: isDay,
     timestamp: timestamp,
     timezone: timezoneStr,
+  };
+}
+
+/**
+ * Maps a canonical CurrentWeather domain model to legacy WeatherData structure
+ * to guarantee complete backward-compatibility with the existing frontend contract.
+ */
+export function mapCurrentWeatherToLegacyWeatherData(
+  current: CurrentWeather,
+  fallbackCityCode?: string | number
+): WeatherData {
+  const numericId = typeof fallbackCityCode === 'number'
+    ? fallbackCityCode
+    : fallbackCityCode ? parseInt(fallbackCityCode, 10) : undefined;
+
+  return {
+    id: numericId,
+    cityCode: numericId,
+    name: current.location.name,
+    cityName: current.location.name,
+    coord: {
+      lat: current.location.coordinates.latitude,
+      lon: current.location.coordinates.longitude,
+    },
+    weather: [
+      {
+        id: typeof current.conditionCode === 'number' ? current.conditionCode : 800,
+        description: current.description,
+      },
+    ],
+    main: {
+      temp: celsiusToKelvin(current.temperatureCelsius, 2),
+      feels_like: celsiusToKelvin(current.feelsLikeCelsius, 2),
+      humidity: current.humidityPercent,
+      pressure: current.pressureHpa,
+    },
+    wind: {
+      speed: kmhToMps(current.windSpeedKmH, 2),
+      deg: current.windDirectionDegrees,
+    },
+    clouds: {
+      all: current.cloudCoverPercent,
+    },
+    rain: current.precipitationMm > 0 ? { '1h': current.precipitationMm } : undefined,
+    timezone: 0,
   };
 }

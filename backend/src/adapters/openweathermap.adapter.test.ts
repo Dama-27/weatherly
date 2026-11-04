@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { mapOpenWeatherToCurrentWeather } from './openweathermap.adapter';
+import {
+  mapCurrentWeatherToLegacyWeatherData,
+  mapOpenWeatherToCurrentWeather,
+} from './openweathermap.adapter';
+import type { CurrentWeather } from '../types/weather-domain.types';
 import type { WeatherData } from '../types/weather.types';
 
 describe('OpenWeatherMap Adapter', () => {
@@ -120,5 +124,41 @@ describe('OpenWeatherMap Adapter', () => {
     expect(domain.temperatureCelsius).toBe(17);
     expect(domain.feelsLikeCelsius).toBe(16);
   });
-});
 
+  it('maps CurrentWeather back to legacy WeatherData for backward compatibility', () => {
+    const domain: CurrentWeather = {
+      location: {
+        name: 'Paris',
+        coordinates: { latitude: 48.8566, longitude: 2.3522 },
+        timezone: 'Europe/Paris',
+      },
+      temperatureCelsius: 22.4,
+      feelsLikeCelsius: 21.8,
+      humidityPercent: 55,
+      windSpeedKmH: 18.0,
+      windDirectionDegrees: 120,
+      pressureHpa: 1015,
+      cloudCoverPercent: 10,
+      precipitationMm: 0.5,
+      uvIndex: 4,
+      conditionCode: 800,
+      description: 'Clear sky',
+      dayNight: 'day',
+      isDay: true,
+      timestamp: new Date().toISOString(),
+      timezone: 'Europe/Paris',
+    };
+
+    const legacy = mapCurrentWeatherToLegacyWeatherData(domain, '2988507');
+
+    expect(legacy.id).toBe(2988507);
+    expect(legacy.cityCode).toBe(2988507);
+    expect(legacy.name).toBe('Paris');
+    expect(legacy.main.temp).toBe(295.55); // 22.4 + 273.15
+    expect(legacy.main.feels_like).toBe(294.95); // 21.8 + 273.15
+    expect(legacy.main.humidity).toBe(55);
+    expect(legacy.wind.speed).toBe(5.0); // 18 / 3.6
+    expect(legacy.rain?.['1h']).toBe(0.5);
+    expect(legacy.weather[0].description).toBe('Clear sky');
+  });
+});

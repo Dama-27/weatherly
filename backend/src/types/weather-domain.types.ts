@@ -29,6 +29,7 @@ export type DayNightIndicator = 'day' | 'night';
  * - Humidity: percentage (0-100)
  * - Wind Speed: km/h
  * - Wind Direction: degrees (0-360)
+ * - Wind Gusts: km/h
  * - Pressure: hPa
  * - Cloud Cover: percentage (0-100)
  * - Precipitation: mm
@@ -41,6 +42,7 @@ export interface CurrentWeather {
   humidityPercent: number;
   windSpeedKmH: number;
   windDirectionDegrees: number;
+  windGustsKmH?: number;
   pressureHpa: number;
   cloudCoverPercent: number;
   precipitationMm: number;
@@ -62,6 +64,7 @@ export interface HourlyForecast {
   feelsLikeCelsius: number;
   humidityPercent: number;
   precipitationMm: number;
+  precipitationProbabilityPercent?: number;
   windSpeedKmH: number;
   windDirectionDegrees: number;
   pressureHpa: number;
@@ -83,6 +86,7 @@ export interface DailyForecast {
   feelsLikeMinCelsius: number;
   feelsLikeMaxCelsius: number;
   precipitationSumMm: number;
+  precipitationProbabilityMaxPercent?: number;
   maxWindSpeedKmH: number;
   dominantWindDirectionDegrees: number;
   conditionCode: number | string;
@@ -102,4 +106,3 @@ export interface CompleteWeatherResponse {
   hourly: HourlyForecast[];
   daily: DailyForecast[];
 }
-
