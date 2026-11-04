@@ -1,4 +1,11 @@
-import type { WeatherResult } from '../types/weather';
+import type {
+  CurrentWeather,
+  DailyForecast,
+  HourlyForecast,
+  LocationInfo,
+  LocationSearchResult,
+  WeatherResult,
+} from '../types/weather';
 
 const API_URL = import.meta.env.VITE_API_URL || '/api';
 
@@ -27,11 +34,139 @@ export interface RankedWeatherData {
   weatherData: WeatherData;
 }
 
+function getAuthHeaders(accessToken?: string): HeadersInit {
+  const headers: Record<string, string> = {
+    Accept: 'application/json',
+  };
+  if (accessToken) {
+    headers.Authorization = `Bearer ${accessToken}`;
+  }
+  return headers;
+}
+
+/**
+ * Searches locations using backend Open-Meteo geocoding proxy.
+ */
+export async function searchLocations(
+  query: string,
+  limit: number = 8,
+  accessToken?: string
+): Promise<LocationSearchResult[]> {
+  const params = new URLSearchParams({
+    q: query.trim(),
+    limit: limit.toString(),
+  });
+
+  const response = await fetch(`${API_URL}/locations/search?${params.toString()}`, {
+    headers: getAuthHeaders(accessToken),
+  });
+
+  if (!response.ok) {
+    const errorJson = await response.json().catch(() => null);
+    throw new Error(errorJson?.error || 'Failed to search locations');
+  }
+
+  const data = await response.json();
+  return Array.isArray(data?.results) ? data.results : [];
+}
+
+/**
+ * Retrieves normalized current weather and location metadata by coordinates.
+ */
+export async function getCurrentWeather(
+  latitude: number,
+  longitude: number,
+  name?: string,
+  accessToken?: string
+): Promise<{ location: LocationInfo; current: CurrentWeather }> {
+  const params = new URLSearchParams({
+    lat: latitude.toString(),
+    lon: longitude.toString(),
+  });
+  if (name) {
+    params.set('name', name);
+  }
+
+  const response = await fetch(`${API_URL}/weather/current?${params.toString()}`, {
+    headers: getAuthHeaders(accessToken),
+  });
+
+  if (!response.ok) {
+    const errorJson = await response.json().catch(() => null);
+    throw new Error(errorJson?.error || 'Failed to load current weather');
+  }
+
+  const data = await response.json();
+  return data;
+}
+
+/**
+ * Retrieves the next 24 hours of hourly weather data by coordinates.
+ */
+export async function getHourlyForecast(
+  latitude: number,
+  longitude: number,
+  name?: string,
+  accessToken?: string
+): Promise<{ location: LocationInfo; timezone: string; hourly: HourlyForecast[] }> {
+  const params = new URLSearchParams({
+    lat: latitude.toString(),
+    lon: longitude.toString(),
+  });
+  if (name) {
+    params.set('name', name);
+  }
+
+  const response = await fetch(`${API_URL}/weather/hourly?${params.toString()}`, {
+    headers: getAuthHeaders(accessToken),
+  });
+
+  if (!response.ok) {
+    const errorJson = await response.json().catch(() => null);
+    throw new Error(errorJson?.error || 'Failed to load hourly forecast');
+  }
+
+  const data = await response.json();
+  return data;
+}
+
+/**
+ * Retrieves 7-day daily forecast by coordinates.
+ */
+export async function getDailyForecast(
+  latitude: number,
+  longitude: number,
+  name?: string,
+  accessToken?: string
+): Promise<{ location: LocationInfo; timezone: string; daily: DailyForecast[] }> {
+  const params = new URLSearchParams({
+    lat: latitude.toString(),
+    lon: longitude.toString(),
+  });
+  if (name) {
+    params.set('name', name);
+  }
+
+  const response = await fetch(`${API_URL}/weather/daily?${params.toString()}`, {
+    headers: getAuthHeaders(accessToken),
+  });
+
+  if (!response.ok) {
+    const errorJson = await response.json().catch(() => null);
+    throw new Error(errorJson?.error || 'Failed to load daily forecast');
+  }
+
+  const data = await response.json();
+  return data;
+}
+
+/**
+ * Legacy 10-City Comfort Index weather data fetcher.
+ */
 function toCelsius(kelvinOrCelsius: number | undefined | null): number | null {
   if (kelvinOrCelsius == null || isNaN(kelvinOrCelsius)) {
     return null;
   }
-
   const celsius = kelvinOrCelsius > 150 ? kelvinOrCelsius - 273.15 : kelvinOrCelsius;
   return Math.round(celsius * 10) / 10;
 }
@@ -77,12 +212,9 @@ function normalizeWeatherItem(item: RankedWeatherData, index: number): WeatherRe
 }
 
 export async function getWeatherData(accessToken?: string): Promise<WeatherResult[]> {
-  const headers: Record<string, string> = {};
-  if (accessToken) {
-    headers.Authorization = `Bearer ${accessToken}`;
-  }
-
-  const response = await fetch(`${API_URL}/weather`, { headers });
+  const response = await fetch(`${API_URL}/weather`, {
+    headers: getAuthHeaders(accessToken),
+  });
 
   if (!response.ok) {
     throw new Error('Failed to fetch weather data');
