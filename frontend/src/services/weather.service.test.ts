@@ -5,6 +5,7 @@ import {
   getDailyForecast,
   getHourlyForecast,
   getWeatherData,
+  getWeatherRecommendations,
   searchLocations,
 } from './weather.service.ts';
 
@@ -192,6 +193,88 @@ describe('Frontend Weather Service', () => {
       assert.strictEqual(results[0].city, 'Nuwara Eliya');
       assert.strictEqual(results[0].temperature, 20);
       assert.strictEqual(results[0].comfortScore, 88);
+    });
+  });
+
+  describe('getWeatherRecommendations', () => {
+    it('requests coordinates and returns recommendations report', async () => {
+      let requestedUrl = '';
+      let requestedHeaders: any = null;
+
+      globalThis.fetch = (async (url: string, init?: RequestInit) => {
+        requestedUrl = url;
+        requestedHeaders = init?.headers;
+        return {
+          ok: true,
+          json: async () => ({
+            location: {
+              name: 'Colombo',
+              coordinates: { latitude: 6.9271, longitude: 79.8612 },
+              timezone: 'Asia/Colombo',
+            },
+            generatedAt: '2026-11-05T10:00:00Z',
+            overallStatus: 'optimal',
+            comfortScore: 85,
+            activities: [
+              {
+                activity: 'Walking',
+                suitability: 'excellent',
+                reason: 'Pleasant temperatures and clear skies.',
+                bestTimeWindow: '06:00 - 09:00',
+              },
+            ],
+            clothing: [
+              {
+                category: 'light',
+                title: 'Light & Breathable Clothing',
+                isPrimary: true,
+                reason: 'Warm weather conditions.',
+                items: ['T-shirt', 'Shorts'],
+              },
+            ],
+            dailyAdvice: ['Great day for outdoor walks.'],
+            bestOutdoorWindow: {
+              start: '2026-11-05T06:00',
+              end: '2026-11-05T09:00',
+              label: '06:00 - 09:00',
+              comfortScore: 90,
+              reason: 'Cool morning temperatures and low rain risk.',
+            },
+          }),
+        } as unknown as Response;
+      }) as any;
+
+      const report = await getWeatherRecommendations(6.9271, 79.8612, 'Colombo', 'token-abc');
+
+      assert.ok(requestedUrl.includes('/api/weather/recommendations'));
+      assert.ok(requestedUrl.includes('lat=6.9271'));
+      assert.ok(requestedUrl.includes('lon=79.8612'));
+      assert.ok(requestedUrl.includes('name=Colombo'));
+      assert.strictEqual(requestedHeaders?.Authorization, 'Bearer token-abc');
+      assert.strictEqual(report.location.name, 'Colombo');
+      assert.strictEqual(report.overallStatus, 'optimal');
+      assert.strictEqual(report.activities.length, 1);
+      assert.strictEqual(report.activities[0].activity, 'Walking');
+      assert.strictEqual(report.activities[0].suitability, 'excellent');
+      assert.strictEqual(report.clothing.length, 1);
+      assert.strictEqual(report.bestOutdoorWindow?.label, '06:00 - 09:00');
+    });
+
+    it('throws error when recommendations API responds with non-ok status', async () => {
+      globalThis.fetch = (async () => ({
+        ok: false,
+        json: async () => ({ error: 'Unable to evaluate weather conditions' }),
+      })) as any;
+
+      await assert.rejects(
+        async () => {
+          await getWeatherRecommendations(6.9271, 79.8612);
+        },
+        {
+          name: 'Error',
+          message: 'Unable to evaluate weather conditions',
+        }
+      );
     });
   });
 });

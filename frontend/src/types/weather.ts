@@ -98,3 +98,55 @@ export interface WeatherResult {
   windSpeed: number | null;
   rain?: number | null;
 }
+
+export type ActivityName =
+  | 'Walking'
+  | 'Running'
+  | 'Cycling'
+  | 'Outdoor sports'
+  | 'Beach activities'
+  | 'Hiking'
+  | 'Gardening';
+
+export type ActivitySuitability = 'excellent' | 'good' | 'moderate' | 'poor';
+
+export interface ActivityRecommendation {
+  activity: ActivityName;
+  suitability: ActivitySuitability;
+  reason: string;
+  bestTimeWindow?: string;
+}
+
+export type ClothingCategory =
+  | 'light_clothing'
+  | 'warm_clothing'
+  | 'rain_protection'
+  | 'sun_protection'
+  | 'wind_protection';
+
+export interface ClothingRecommendation {
+  category: ClothingCategory;
+  title: string;
+  items: string[];
+  reason: string;
+  isPrimary: boolean;
+}
+
+export interface BestOutdoorWindow {
+  startTime: string;
+  endTime: string;
+  label: string;
+  comfortScore: number;
+  reason: string;
+}
+
+export interface WeatherRecommendationsReport {
+  location: LocationInfo;
+  comfortScore: number;
+  overallStatus: 'optimal' | 'favorable' | 'caution' | 'adverse';
+  activities: ActivityRecommendation[];
+  clothing: ClothingRecommendation[];
+  dailyAdvice: string[];
+  bestOutdoorWindow: BestOutdoorWindow | null;
+  calculatedAt: string;
+}

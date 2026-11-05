@@ -8,12 +8,14 @@ import Loading from './components/Loading';
 import UserHeader from './components/UserHeader';
 import WeatherCard from './components/WeatherCard';
 import WeatherMetricsGrid from './components/WeatherMetricsGrid';
+import WeatherRecommendationsSection from './components/WeatherRecommendationsSection';
 import WeatherTable from './components/WeatherTable';
 import {
   getCurrentWeather,
   getDailyForecast,
   getHourlyForecast,
   getWeatherData,
+  getWeatherRecommendations,
 } from './services/weather.service';
 import { getWeatherTheme } from './utils/weather-theme';
 import type {
@@ -21,6 +23,7 @@ import type {
   DailyForecast,
   HourlyForecast,
   SavedLocation,
+  WeatherRecommendationsReport,
   WeatherResult,
 } from './types/weather';
 
@@ -65,6 +68,7 @@ export default function App() {
   const [currentWeather, setCurrentWeather] = useState<CurrentWeather | null>(null);
   const [hourlyForecast, setHourlyForecast] = useState<HourlyForecast[]>([]);
   const [dailyForecast, setDailyForecast] = useState<DailyForecast[]>([]);
+  const [recommendations, setRecommendations] = useState<WeatherRecommendationsReport | null>(null);
   const [weatherLoading, setWeatherLoading] = useState(false);
   const [weatherError, setWeatherError] = useState<string | null>(null);
   const [reloadTrigger, setReloadTrigger] = useState(0);
@@ -99,16 +103,21 @@ export default function App() {
           // Token unavailable
         }
 
-        const [currentRes, hourlyRes, dailyRes] = await Promise.all([
+        const [currentRes, hourlyRes, dailyRes, recsRes] = await Promise.all([
           getCurrentWeather(selectedLocation.latitude, selectedLocation.longitude, selectedLocation.name, token),
           getHourlyForecast(selectedLocation.latitude, selectedLocation.longitude, selectedLocation.name, token),
           getDailyForecast(selectedLocation.latitude, selectedLocation.longitude, selectedLocation.name, token),
+          getWeatherRecommendations(selectedLocation.latitude, selectedLocation.longitude, selectedLocation.name, token).catch((err) => {
+            console.warn('Weather recommendations failed to load:', err);
+            return null;
+          }),
         ]);
 
         if (isMounted) {
           setCurrentWeather(currentRes.current);
           setHourlyForecast(hourlyRes.hourly || []);
           setDailyForecast(dailyRes.daily || []);
+          setRecommendations(recsRes);
         }
       } catch (err: unknown) {
         if (isMounted) {
@@ -351,6 +360,14 @@ export default function App() {
                   timezone={currentWeather.location.timezone}
                   loading={weatherLoading}
                   theme={weatherTheme}
+                />
+
+                {/* Smart Weather Recommendations Section */}
+                <WeatherRecommendationsSection
+                  recommendations={recommendations}
+                  loading={weatherLoading}
+                  error={weatherError}
+                  onRetry={() => setReloadTrigger((n) => n + 1)}
                 />
 
                 {/* 7-Day Forecast Section */}

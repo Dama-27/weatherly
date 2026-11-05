@@ -49,6 +49,14 @@ export function intelligenceWeatherCacheKey(lat: number, lon: number): string {
 }
 
 /**
+ * Cache key for weather recommendations by coordinates.
+ * Format: weather:recommendations:{lat}:{lon}
+ */
+export function recommendationsWeatherCacheKey(lat: number, lon: number): string {
+  return `weather:recommendations:${roundCoordinate(lat)}:${roundCoordinate(lon)}`;
+}
+
+/**
  * Cache key for location search results.
  * Format: location:search:{normalizedQuery}:{limit}
  */

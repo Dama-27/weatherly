@@ -7,14 +7,17 @@ import { getCached, setCached } from "../services/cache.service";
 import { getCityCodes } from "../services/city.service";
 import { createRankedWeatherResults } from "../services/weather-analytics.service";
 import { analyzeWeather } from "../services/weather-intelligence.service";
+import { generateRecommendations } from "../services/weather-recommendation.service";
 import { getWeatherByCityCode } from "../services/weather.service";
 import type { CompleteWeatherResponse, CurrentWeather } from "../types/weather-domain.types";
 import type { WeatherIntelligenceReport } from "../types/weather-intelligence.types";
+import type { WeatherRecommendationsReport } from "../types/weather-recommendation.types";
 import {
   currentWeatherCacheKey,
   dailyWeatherCacheKey,
   hourlyWeatherCacheKey,
   intelligenceWeatherCacheKey,
+  recommendationsWeatherCacheKey,
 } from "../utils/cache-keys";
 
 const WEATHER_CACHE_TTL_SECONDS = 300;
@@ -230,6 +233,52 @@ export async function getWeatherIntelligenceByCoords(
     response.json(report);
   } catch (err: unknown) {
     handleWeatherControllerError(err, response, 'weather intelligence');
+  }
+}
+
+/**
+ * GET /api/weather/recommendations?lat=...&lon=...
+ * Generates context-aware activity suitability, clothing suggestions, daily tips,
+ * and optimal outdoor time windows from actual meteorological conditions.
+ */
+export async function getWeatherRecommendationsByCoords(
+  request: Request,
+  response: Response
+): Promise<void> {
+  try {
+    const { latitude, longitude } = parseCoordinates(request.query.lat, request.query.lon);
+    const locationName = typeof request.query.name === 'string' ? request.query.name : undefined;
+
+    const cacheKey = recommendationsWeatherCacheKey(latitude, longitude);
+    const cached = getCached<WeatherRecommendationsReport>(cacheKey);
+
+    if (cached) {
+      console.log(`[Cache] HIT ${cacheKey}`);
+      response.json({
+        ...cached,
+        location: {
+          ...cached.location,
+          name: locationName || cached.location.name,
+        },
+      });
+      return;
+    }
+
+    console.log(`[Cache] MISS ${cacheKey}`);
+    const provider = createWeatherProvider(env.weatherProvider);
+    const forecast: CompleteWeatherResponse = await provider.getForecast(
+      { latitude, longitude },
+      { days: 2, includeHourly: true },
+      locationName
+    );
+
+    const report = generateRecommendations(forecast.current, forecast.hourly);
+
+    setCached(cacheKey, report, WEATHER_CACHE_TTL_SECONDS);
+
+    response.json(report);
+  } catch (err: unknown) {
+    handleWeatherControllerError(err, response, 'weather recommendations');
   }
 }
 

@@ -5,6 +5,7 @@ import {
   getHourlyForecastByCoords,
   getWeather,
   getWeatherIntelligenceByCoords,
+  getWeatherRecommendationsByCoords,
 } from '../controllers/weather.controller';
 import { validateAccessToken } from '../middleware/auth0.middleware';
 
@@ -18,5 +19,6 @@ weatherRouter.get('/weather/current', getCurrentWeatherByCoords);
 weatherRouter.get('/weather/hourly', getHourlyForecastByCoords);
 weatherRouter.get('/weather/daily', getDailyForecastByCoords);
 weatherRouter.get('/weather/intelligence', getWeatherIntelligenceByCoords);
+weatherRouter.get('/weather/recommendations', getWeatherRecommendationsByCoords);
 
 export default weatherRouter;

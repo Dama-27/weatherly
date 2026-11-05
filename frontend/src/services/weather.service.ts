@@ -4,6 +4,7 @@ import type {
   HourlyForecast,
   LocationInfo,
   LocationSearchResult,
+  WeatherRecommendationsReport,
   WeatherResult,
 } from '../types/weather';
 
@@ -154,6 +155,36 @@ export async function getDailyForecast(
   if (!response.ok) {
     const errorJson = await response.json().catch(() => null);
     throw new Error(errorJson?.error || 'Failed to load daily forecast');
+  }
+
+  const data = await response.json();
+  return data;
+}
+
+/**
+ * Retrieves smart weather recommendations (activities, clothing, advice, optimal window) by coordinates.
+ */
+export async function getWeatherRecommendations(
+  latitude: number,
+  longitude: number,
+  name?: string,
+  accessToken?: string
+): Promise<WeatherRecommendationsReport> {
+  const params = new URLSearchParams({
+    lat: latitude.toString(),
+    lon: longitude.toString(),
+  });
+  if (name) {
+    params.set('name', name);
+  }
+
+  const response = await fetch(`${API_URL}/weather/recommendations?${params.toString()}`, {
+    headers: getAuthHeaders(accessToken),
+  });
+
+  if (!response.ok) {
+    const errorJson = await response.json().catch(() => null);
+    throw new Error(errorJson?.error || 'Failed to load weather recommendations');
   }
 
   const data = await response.json();

@@ -1212,6 +1212,371 @@ body {
 }
 
 /* ==========================================================================
+   Smart Weather Recommendations Section
+   ========================================================================== */
+
+.recommendations-section {
+  position: relative;
+}
+
+.recommendations-header-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.recommendations-subtitle {
+  margin: 4px 0 0 0;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.recommendations-status-badge-container {
+  flex-shrink: 0;
+}
+
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 9999px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.status-optimal {
+  background-color: #dcfce7;
+  color: #15803d;
+  border: 1px solid #86efac;
+}
+
+.status-favorable {
+  background-color: #e0f2fe;
+  color: #0369a1;
+  border: 1px solid #7dd3fc;
+}
+
+.status-caution {
+  background-color: #fef3c7;
+  color: #b45309;
+  border: 1px solid #fde68a;
+}
+
+.status-adverse {
+  background-color: #fee2e2;
+  color: #b91c1c;
+  border: 1px solid #fca5a5;
+}
+
+.recommendations-error-box {
+  background-color: var(--bg-surface-subtle);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+/* Best Outdoor Window Card */
+.best-window-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  background: linear-gradient(135deg, rgba(37, 99, 235, 0.08) 0%, rgba(14, 165, 233, 0.04) 100%);
+  border: 1px solid rgba(37, 99, 235, 0.22);
+  border-radius: var(--radius-lg);
+  padding: 16px 20px;
+  margin-bottom: 24px;
+}
+
+.best-window-icon {
+  color: var(--primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.best-window-content {
+  flex: 1;
+}
+
+.best-window-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 4px;
+}
+
+.best-window-tag {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #1d4ed8;
+  background-color: rgba(37, 99, 235, 0.12);
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.best-window-time {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.best-window-score {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.best-window-reason {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin: 0;
+  line-height: 1.45;
+}
+
+/* Sub-blocks */
+.recommendations-sub-block {
+  margin-bottom: 24px;
+}
+
+.recommendations-sub-block:last-child {
+  margin-bottom: 0;
+}
+
+.sub-block-title {
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-secondary);
+  margin: 0 0 12px 0;
+}
+
+/* Activities Grid */
+.activities-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 14px;
+}
+
+.activity-card {
+  background-color: var(--bg-surface-subtle);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.activity-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--border-medium);
+  box-shadow: var(--shadow-sm);
+}
+
+.activity-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.activity-name-col {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--text-primary);
+}
+
+.activity-icon {
+  color: var(--primary);
+  display: inline-flex;
+}
+
+.suitability-badge {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 9999px;
+  text-transform: capitalize;
+  letter-spacing: 0.03em;
+}
+
+.badge-excellent {
+  background-color: #dcfce7;
+  color: #15803d;
+  border: 1px solid #bbf7d0;
+}
+
+.badge-good {
+  background-color: #e0f2fe;
+  color: #0369a1;
+  border: 1px solid #bae6fd;
+}
+
+.badge-moderate {
+  background-color: #fef3c7;
+  color: #b45309;
+  border: 1px solid #fde68a;
+}
+
+.badge-poor {
+  background-color: #fee2e2;
+  color: #b91c1c;
+  border: 1px solid #fecaca;
+}
+
+.activity-reason {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.4;
+  margin: 0;
+  flex: 1;
+}
+
+.activity-best-time {
+  font-size: 12px;
+  color: var(--text-primary);
+  background-color: var(--bg-surface);
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-subtle);
+  margin-top: 2px;
+}
+
+.best-time-label {
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+/* Clothing Suggestions */
+.clothing-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 14px;
+}
+
+.clothing-card {
+  background-color: var(--bg-surface-subtle);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transition: transform 0.2s ease, border-color 0.2s ease;
+}
+
+.clothing-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--border-medium);
+}
+
+.clothing-card.clothing-primary {
+  border-color: rgba(37, 99, 235, 0.4);
+  background: linear-gradient(180deg, rgba(37, 99, 235, 0.04) 0%, var(--bg-surface-subtle) 100%);
+}
+
+.clothing-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.clothing-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.clothing-primary-tag {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #1d4ed8;
+  background-color: rgba(37, 99, 235, 0.12);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.clothing-reason {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.4;
+  margin: 0;
+}
+
+.clothing-items-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  list-style: none;
+  margin: 4px 0 0 0;
+  padding: 0;
+}
+
+.clothing-item-pill {
+  font-size: 12px;
+  font-weight: 500;
+  background-color: var(--bg-surface);
+  color: var(--text-primary);
+  border: 1px solid var(--border-subtle);
+  padding: 2px 8px;
+  border-radius: 9999px;
+}
+
+/* Daily Weather Advice */
+.daily-advice-box {
+  background-color: var(--bg-surface-subtle);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: 16px 20px;
+}
+
+.advice-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.advice-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--text-primary);
+  line-height: 1.5;
+}
+
+.advice-bullet {
+  color: var(--primary);
+  font-size: 18px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+/* ==========================================================================
    Preserved 10-City Comfort Index Rankings View
    ========================================================================== */
 
@@ -1504,6 +1869,23 @@ body {
 
   .weather-details {
     grid-template-columns: repeat(2, 1fr);
+  }
+
+  /* Recommendations mobile */
+  .recommendations-header-row {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .activities-grid,
+  .clothing-cards-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .best-window-card {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
   }
 }
 
