@@ -142,4 +142,48 @@ describe('Assistant Controller (POST /api/assistant/ask)', () => {
     expect(body.weatherContext.temperatureCelsius).toBe(30.5);
     expect(Array.isArray(body.suggestedFollowUps)).toBe(true);
   });
+
+  it('returns 504 when weather provider aborts/times out', async () => {
+    globalThis.fetch = vi.fn().mockImplementation(() => {
+      const error = new Error('The operation was aborted');
+      error.name = 'AbortError';
+      return Promise.reject(error);
+    });
+
+    const { req, res, getStatusCode, getBody } = createMockReqRes({
+      question: 'Should I run?',
+      location: { latitude: 7.2083, longitude: 79.8358 },
+    });
+
+    await askAssistant(req, res);
+    expect(getStatusCode()).toBe(504);
+    expect(getBody().error).toContain('timed out');
+  });
+
+  it('returns 502 when weather provider returns an HTTP error', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 503,
+      json: vi.fn().mockResolvedValue({ reason: 'Service unavailable' }),
+    } as unknown as Response);
+
+    const { req, res, getStatusCode, getBody } = createMockReqRes({
+      question: 'Will it rain?',
+      location: { latitude: 7.2083, longitude: 79.8358 },
+    });
+
+    await askAssistant(req, res);
+    expect(getStatusCode()).toBe(502);
+    expect(getBody().error).toContain('Weather provider error');
+  });
+
+  it('rejects request when location object is completely missing', async () => {
+    const { req, res, getStatusCode, getBody } = createMockReqRes({
+      question: 'Will it rain?',
+    });
+
+    await askAssistant(req, res);
+    expect(getStatusCode()).toBe(400);
+    expect(getBody().error).toContain('coordinates are required');
+  });
 });

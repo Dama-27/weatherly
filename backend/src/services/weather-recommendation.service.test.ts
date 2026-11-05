@@ -233,6 +233,36 @@ describe('Weather Recommendation Service', () => {
       expect(wind).toBeDefined();
       expect(wind?.isPrimary).toBe(true);
     });
+
+    it('suggests sun protection when UV index is elevated', () => {
+      const sunnyWeather: CurrentWeather = {
+        ...baseComfortableWeather,
+        uvIndex: 8.5,
+      };
+
+      const clothing = generateClothingRecommendations(sunnyWeather);
+      const sun = clothing.find((c) => c.category === 'sun_protection');
+
+      expect(sun).toBeDefined();
+      expect(sun?.items).toContain('UV-rated sunglasses');
+      expect(sun?.items).toContain('Broad-spectrum SPF 30+ sunscreen');
+    });
+
+    it('rates beach activities excellent during warm, sunny conditions', () => {
+      const beachWeather: CurrentWeather = {
+        ...baseComfortableWeather,
+        temperatureCelsius: 29,
+        feelsLikeCelsius: 30,
+        precipitationMm: 0,
+        windSpeedKmH: 12,
+        uvIndex: 5,
+        conditionCode: 0,
+      };
+
+      const activities = evaluateActivities(beachWeather);
+      const beach = activities.find((a) => a.activity === 'Beach activities');
+      expect(beach?.suitability).toBe('excellent');
+    });
   });
 
   describe('Best Outdoor Window Discovery', () => {

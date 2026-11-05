@@ -378,6 +378,49 @@ describe('Weather Alert Evaluation Service', () => {
       expect(alert).not.toBeNull();
       expect(alert?.actualValue).toBe(12.0);
     });
+
+    it('triggers heavy precipitation when violent rain showers code 82 is present', () => {
+      const showerCurrent: CurrentWeather = {
+        ...baseCurrentWeather,
+        conditionCode: 82,
+        precipitationMm: 1.0,
+      };
+      const rule: AlertRule = {
+        id: 'rule-code-82',
+        type: 'heavy_precipitation',
+        threshold: 5.0,
+        enabled: true,
+        location: mockLocation,
+        createdAt: '2026-11-05T10:00:00Z',
+      };
+
+      const alert = evaluateSingleRule(rule, showerCurrent, []);
+      expect(alert).not.toBeNull();
+      expect(alert?.type).toBe('heavy_precipitation');
+    });
+
+    it('triggers thunderstorm when severe thunderstorm with hail code 99 is forecast', () => {
+      const hailHourly: HourlyForecast[] = [
+        {
+          ...baseHourlyForecast[0],
+          conditionCode: 99,
+          timestamp: '2026-11-05T16:00:00Z',
+        },
+      ];
+      const rule: AlertRule = {
+        id: 'rule-hail-storm',
+        type: 'thunderstorm',
+        threshold: null,
+        enabled: true,
+        location: mockLocation,
+        createdAt: '2026-11-05T10:00:00Z',
+      };
+
+      const alert = evaluateSingleRule(rule, baseCurrentWeather, hailHourly);
+      expect(alert).not.toBeNull();
+      expect(alert?.type).toBe('thunderstorm');
+      expect(alert?.severity).toBe('severe');
+    });
   });
 
   describe('Edge Cases and Constraints', () => {

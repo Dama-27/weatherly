@@ -95,17 +95,46 @@ Authorization: Bearer <access_token>
 
 ---
 
-## Comfort Index Formula
+## Weather Intelligence & Risk Assessment Engine
 
-The heuristic Comfort Score (0–100) evaluates four surface parameters:
+Weatherly features a deterministic Weather Intelligence Engine (`/api/weather/intelligence`) calculating actionable weather insights and hazard assessments:
+
+### 1. Comfort Score Formula (0–100)
+Evaluates normalized meteorological surface metrics using weighted physiological comfort curves:
 ```text
 Comfort Score = (Temperature Score * 0.50) + (Humidity Score * 0.30) + (Wind Score * 0.10) + (Rain Score * 0.10)
 ```
+- **Feels-Like Temperature (50%):** Ideal comfort plateau at 24°C–26°C (score 100). Scores decay symmetrically towards extreme cold or heat.
+- **Relative Humidity (30%):** Ideal range 40%–60% (score 100). Penalizes arid (<30%) and muggy (>70%) conditions.
+- **Wind Speed (10%):** Ideal light breeze 5–15 km/h (score 100). Calm air scores 60; high winds (>30 km/h) are penalized.
+- **Precipitation (10%):** 0 mm/h scores 100; active rain or snowfall decreases score proportionally.
 
-- **Feels-Like Temperature (50%):** Ideal range 24°C–26°C (score 100). Drops gradually outside this zone.
-- **Humidity (30%):** Ideal range 40%–60% (score 100). Penalizes dry air and high humidity.
-- **Wind Speed (10%):** Ideal range 5–15 km/h (score 100). Calm air scores 60; strong winds (>30 km/h) are penalized.
-- **Rain (10%):** 0 mm scores 100; precipitation progressively lowers the score.
+### 2. Multi-Hazard Risk Assessment
+Analyzes current metrics and forecasts across 6 meteorological hazard categories:
+- **Extreme Heat:** Elevated risk when heat index or feels-like temperature exceeds 32°C (moderate) or 38°C (high/severe).
+- **Extreme Cold:** Risk flagged when feels-like temperature drops below 10°C (moderate) or below 0°C (high/freeze).
+- **High Wind:** Evaluates gust hazards above 30 km/h (moderate) and 50 km/h (high/gale).
+- **Heavy Precipitation:** Detects intense rainfall exceeding 5 mm/h or forecast precipitation sums.
+- **Severe Storms:** Identifies active thunderstorm activity and convective systems (WMO 95, 96, 99).
+- **High UV Radiation:** Flags UV Index $\ge 6$ (moderate protection required) and $\ge 8$ (high burn hazard).
+
+### 3. Overall Condition Status
+Synthesizes comfort score and active risk hazards into an actionable overall status: `ideal`, `favorable`, `moderate`, `adverse`, or `severe`.
+
+---
+
+## Context-Aware Weather Recommendations
+
+The Smart Recommendations engine (`/api/weather/recommendations`) translates meteorological parameters into actionable everyday advice:
+
+- **7 Outdoor Activities:**
+  - Evaluates suitability (`excellent`, `good`, `moderate`, `poor`) for Walking, Running, Cycling, Outdoor sports, Beach activities, Hiking, and Gardening based on temperature, wind limits, UV exposure, and ground surface conditions.
+- **5 Clothing Guidance Categories:**
+  - Provides dynamic item suggestions for Light breathable clothing, Warm layers, Rain gear, Sun protection, and Windbreakers.
+- **Optimal Outdoor Time Window:**
+  - Analyzes 24-hour hourly forecast curves to automatically detect the longest continuous daylight window (2+ hours) offering minimal precipitation probability and optimal comfort.
+- **Daily Weather Advice:**
+  - Contextual actionable tips (e.g., carrying an umbrella, scheduling runs in the early morning to avoid peak heat, or applying broad-spectrum sunscreen).
 
 ---
 
@@ -205,7 +234,7 @@ The frontend Vite server runs on `http://localhost:5173`. API requests (`/api/*`
 Execute the Vitest suite and compile TypeScript:
 ```bash
 cd backend
-npm test        # Runs all 11 test suites (75 unit & integration tests)
+npm test        # Runs all 18 test suites (167 unit & integration tests)
 npm run build   # Typechecks and builds backend with tsc
 ```
 
@@ -213,8 +242,8 @@ npm run build   # Typechecks and builds backend with tsc
 Execute linting, unit tests, and production build:
 ```bash
 cd frontend
-npm run lint    # Runs oxlint static analysis
-npm test        # Runs unit tests via Node native test runner (node:test)
+npm run lint    # Runs oxlint static analysis (0 errors, 0 warnings across 30 files)
+npm test        # Runs unit tests via Node native test runner (16 suites, 33 tests)
 npm run build   # Typechecks (tsc -b) and bundles production client with Vite
 ```
 
