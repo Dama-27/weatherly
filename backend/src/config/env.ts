@@ -6,6 +6,8 @@ const weatherProvider = (process.env.WEATHER_PROVIDER ?? 'open-meteo').toLowerCa
 const openWeatherApiKey = process.env.OPENWEATHER_API_KEY ?? '';
 const auth0Domain = process.env.AUTH0_DOMAIN ?? '';
 const auth0Audience = process.env.AUTH0_AUDIENCE ?? '';
+const geminiApiKey = process.env.GEMINI_API_KEY ?? '';
+const geminiModel = process.env.GEMINI_MODEL ?? 'gemini-1.5-flash';
 
 if (weatherProvider === 'openweathermap' && !openWeatherApiKey) {
   throw new Error('OPENWEATHER_API_KEY is not configured for OpenWeatherMap provider.');
@@ -24,4 +26,6 @@ export const env = {
   openWeatherApiKey,
   auth0Domain,
   auth0Audience,
+  geminiApiKey,
+  geminiModel,
 };

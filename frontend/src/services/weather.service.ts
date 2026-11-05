@@ -2,6 +2,7 @@ import type {
   AlertEvaluationReport,
   AlertLocation,
   AlertRule,
+  AssistantResponse,
   CurrentWeather,
   DailyForecast,
   HourlyForecast,
@@ -219,6 +220,37 @@ export async function evaluateWeatherAlerts(
   if (!response.ok) {
     const errorJson = await response.json().catch(() => null);
     throw new Error(errorJson?.error || 'Failed to evaluate weather alerts');
+  }
+
+  const data = await response.json();
+  return data;
+}
+
+/**
+ * Asks the AI Weather Copilot a natural language question with ground-truth weather context.
+ */
+export async function askWeatherAssistant(
+  question: string,
+  location: { latitude: number; longitude: number; name?: string },
+  accessToken?: string
+): Promise<AssistantResponse> {
+  const headers: Record<string, string> = {
+    ...(getAuthHeaders(accessToken) as Record<string, string>),
+    'Content-Type': 'application/json',
+  };
+
+  const response = await fetch(`${API_URL}/assistant/ask`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      question,
+      location,
+    }),
+  });
+
+  if (!response.ok) {
+    const errorJson = await response.json().catch(() => null);
+    throw new Error(errorJson?.error || 'Failed to get answer from weather assistant');
   }
 
   const data = await response.json();

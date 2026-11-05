@@ -78,6 +78,7 @@ Base URL: `http://localhost:3000`
 | `GET` | `/api/weather/intelligence?lat={lat}&lon={lon}&name={name}` | Returns Comfort Score, active weather hazard risk assessment, and synthesis | Optional |
 | `GET` | `/api/weather/recommendations?lat={lat}&lon={lon}&name={name}` | Returns outdoor activity suitability, clothing suggestions, daily advice, and best outdoor window | Optional |
 | `POST` | `/api/weather/alerts/evaluate` | Evaluates user-configured weather alert rules against current and forecast conditions | Optional |
+| `POST` | `/api/assistant/ask` | Answers natural-language weather queries using Google Gemini with deterministic fallback | Optional |
 
 ### 2. Preserved Legacy & System Endpoints
 | Method | Endpoint | Description | Auth Required |
@@ -138,7 +139,29 @@ AUTH0_AUDIENCE=https://weather-analytics-api
 
 # Optional: only needed if WEATHER_PROVIDER=openweathermap
 OPENWEATHER_API_KEY=your_openweathermap_key_here
+
+# Optional: enables Google Gemini AI Copilot (defaults to deterministic rule engine if omitted)
+GEMINI_API_KEY=your_gemini_api_key_here
+GEMINI_MODEL=gemini-1.5-flash
 ```
+
+---
+
+## AI Weather Copilot & Deterministic Fallback
+
+The Weatherly Copilot answers natural-language inquiries regarding weather conditions, outdoor activities, clothing choices, and comfort metrics.
+
+### Key Capabilities:
+- **Provider-Independent Architecture (`IAssistantProvider`):** Isolates generative AI providers behind a unified contract.
+- **Primary AI Provider (Google Gemini):** Integrates free-tier Gemini models via secure backend REST API with strict grounding, 8-second timeout, and non-hallucination guardrails. Never exposes API keys to client browsers.
+- **Deterministic Meteorological Fallback:** If `GEMINI_API_KEY` is omitted, or if rate limits (429), timeouts, or upstream provider errors occur, the copilot automatically falls back to an algorithmic rules engine.
+- **Supported Question Topics:**
+  - Running, walking, cycling, and outdoor sport suitability.
+  - Precipitation, rain likelihood, and umbrella necessity (today and tomorrow).
+  - Clothing, attire, rain gear, and UV sun protection advice.
+  - Comfort Index score explanations and active risk factor breakdowns.
+  - Optimal outdoor time windows.
+- **Session Privacy:** Conversation logs remain strictly ephemeral within the active browser session. No chat histories or authentication tokens are persisted into localStorage.
 
 ### Frontend (`frontend/.env`)
 Create `frontend/.env` using the following reference:

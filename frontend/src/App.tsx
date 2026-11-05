@@ -10,6 +10,7 @@ import WeatherCard from './components/WeatherCard';
 import WeatherMetricsGrid from './components/WeatherMetricsGrid';
 import WeatherRecommendationsSection from './components/WeatherRecommendationsSection';
 import WeatherAlertsSection from './components/WeatherAlertsSection';
+import WeatherCopilotSection from './components/WeatherCopilotSection';
 import WeatherTable from './components/WeatherTable';
 import {
   evaluateWeatherAlerts,
@@ -477,6 +478,12 @@ export default function App() {
                   onCreateRule={handleCreateAlert}
                   onToggleRule={handleToggleAlert}
                   onDeleteRule={handleDeleteAlert}
+                />
+
+                {/* AI Weather Copilot Panel */}
+                <WeatherCopilotSection
+                  location={selectedLocation}
+                  getAccessTokenSilently={getAccessTokenSilently}
                 />
 
                 {/* 7-Day Forecast Section */}

@@ -1,6 +1,7 @@
 import { afterEach, describe, it } from 'node:test';
 import assert from 'node:assert';
 import {
+  askWeatherAssistant,
   evaluateWeatherAlerts,
   getCurrentWeather,
   getDailyForecast,
@@ -355,6 +356,74 @@ describe('Frontend Weather Service', () => {
         {
           name: 'Error',
           message: 'Alert evaluation timed out',
+        }
+      );
+    });
+  });
+
+  describe('askWeatherAssistant', () => {
+    it('sends question and location payload to /api/assistant/ask', async () => {
+      let requestedUrl = '';
+      let requestedMethod = '';
+      let requestedBody: any = null;
+      let requestedHeaders: any = null;
+
+      globalThis.fetch = (async (url: string, init?: RequestInit) => {
+        requestedUrl = url;
+        requestedMethod = init?.method || 'GET';
+        requestedBody = init?.body ? JSON.parse(init.body as string) : null;
+        requestedHeaders = init?.headers;
+
+        return {
+          ok: true,
+          json: async () => ({
+            answer: 'For running in Colombo, conditions are currently rated GOOD.',
+            provider: 'rules',
+            weatherContext: {
+              locationName: 'Colombo',
+              temperatureCelsius: 28.0,
+              feelsLikeCelsius: 32.0,
+              conditionDescription: 'Clear',
+              comfortScore: 75,
+              overallStatus: 'favorable',
+              bestOutdoorWindow: '6:00 AM – 8:00 AM',
+              activeHazardsCount: 0,
+            },
+            suggestedFollowUps: ['What should I wear today?'],
+          }),
+        } as unknown as Response;
+      }) as any;
+
+      const response = await askWeatherAssistant(
+        'Should I go running this evening?',
+        { latitude: 6.9271, longitude: 79.8612, name: 'Colombo' },
+        'auth-token-123'
+      );
+
+      assert.ok(requestedUrl.includes('/api/assistant/ask'));
+      assert.strictEqual(requestedMethod, 'POST');
+      assert.strictEqual(requestedHeaders?.Authorization, 'Bearer auth-token-123');
+      assert.strictEqual(requestedHeaders?.['Content-Type'], 'application/json');
+      assert.strictEqual(requestedBody.question, 'Should I go running this evening?');
+      assert.strictEqual(requestedBody.location.latitude, 6.9271);
+      assert.strictEqual(response.provider, 'rules');
+      assert.ok(response.answer.includes('rated GOOD'));
+      assert.strictEqual(response.weatherContext.temperatureCelsius, 28.0);
+    });
+
+    it('throws descriptive error on assistant API failure', async () => {
+      globalThis.fetch = (async () => ({
+        ok: false,
+        json: async () => ({ error: 'Assistant service timed out' }),
+      })) as any;
+
+      await assert.rejects(
+        async () => {
+          await askWeatherAssistant('Will it rain?', { latitude: 6.9271, longitude: 79.8612 });
+        },
+        {
+          name: 'Error',
+          message: 'Assistant service timed out',
         }
       );
     });

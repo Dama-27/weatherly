@@ -2,6 +2,7 @@ import express from 'express';
 import weatherRouter from './routes/weather.routes';
 import locationRouter from './routes/location.routes';
 import cacheRouter from './routes/cache.router';
+import assistantRouter from './routes/assistant.routes';
 
 const app = express();
 
@@ -16,5 +17,6 @@ app.get('/health', (_request, response) => {
 app.use('/api', weatherRouter);
 app.use('/api', locationRouter);
 app.use('/api', cacheRouter);
+app.use('/api', assistantRouter);
 
 export default app;

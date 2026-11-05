@@ -201,3 +201,38 @@ export interface AlertEvaluationReport {
   evaluatedAt: string;
 }
 
+// ==========================================================================
+// AI Weather Copilot Models
+// ==========================================================================
+
+export type AssistantProviderType = 'gemini' | 'rules';
+
+export interface AssistantContextSummary {
+  locationName: string;
+  temperatureCelsius: number;
+  feelsLikeCelsius: number;
+  conditionDescription: string;
+  comfortScore: number;
+  overallStatus: string;
+  bestOutdoorWindow?: string;
+  activeHazardsCount: number;
+}
+
+export interface AssistantResponse {
+  answer: string;
+  provider: AssistantProviderType;
+  weatherContext: AssistantContextSummary;
+  suggestedFollowUps?: string[];
+}
+
+export interface AssistantChatMessage {
+  id: string;
+  sender: 'user' | 'assistant';
+  text: string;
+  provider?: AssistantProviderType;
+  timestamp: string;
+  suggestedFollowUps?: string[];
+  isError?: boolean;
+}
+
+
