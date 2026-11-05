@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import {
+  evaluateWeatherAlerts,
   getCurrentWeatherByCoords,
   getDailyForecastByCoords,
   getHourlyForecastByCoords,
@@ -20,5 +21,6 @@ weatherRouter.get('/weather/hourly', getHourlyForecastByCoords);
 weatherRouter.get('/weather/daily', getDailyForecastByCoords);
 weatherRouter.get('/weather/intelligence', getWeatherIntelligenceByCoords);
 weatherRouter.get('/weather/recommendations', getWeatherRecommendationsByCoords);
+weatherRouter.post('/weather/alerts/evaluate', evaluateWeatherAlerts);
 
 export default weatherRouter;

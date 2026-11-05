@@ -1,6 +1,7 @@
 import { afterEach, describe, it } from 'node:test';
 import assert from 'node:assert';
 import {
+  evaluateWeatherAlerts,
   getCurrentWeather,
   getDailyForecast,
   getHourlyForecast,
@@ -273,6 +274,87 @@ describe('Frontend Weather Service', () => {
         {
           name: 'Error',
           message: 'Unable to evaluate weather conditions',
+        }
+      );
+    });
+  });
+
+  describe('evaluateWeatherAlerts', () => {
+    it('sends POST request with rules and returns alert report', async () => {
+      let requestedUrl = '';
+      let requestedMethod = '';
+      let requestedBody: any = null;
+      let requestedHeaders: any = null;
+
+      globalThis.fetch = (async (url: string, init?: RequestInit) => {
+        requestedUrl = url;
+        requestedMethod = init?.method || 'GET';
+        requestedBody = init?.body ? JSON.parse(init.body as string) : null;
+        requestedHeaders = init?.headers;
+
+        return {
+          ok: true,
+          json: async () => ({
+            evaluatedCount: 1,
+            triggeredCount: 1,
+            alerts: [
+              {
+                id: 'alert_1',
+                ruleId: 'rule_1',
+                type: 'temp_above',
+                actualValue: 33.5,
+                threshold: 30,
+                message: 'Current temperature in Colombo is 33.5°C, exceeding your threshold of 30°C.',
+                timestamp: '2026-11-05T12:00:00Z',
+                locationName: 'Colombo',
+                severity: 'warning',
+              },
+            ],
+            disclaimer: 'MVP Notice: Alerts are evaluated when Weatherly is open and refreshing weather data.',
+            evaluatedAt: '2026-11-05T12:00:00Z',
+          }),
+        } as unknown as Response;
+      }) as any;
+
+      const rules = [
+        {
+          id: 'rule_1',
+          type: 'temp_above' as const,
+          threshold: 30,
+          enabled: true,
+          location: { latitude: 6.9271, longitude: 79.8612, name: 'Colombo' },
+          createdAt: '2026-11-05T10:00:00Z',
+        },
+      ];
+
+      const report = await evaluateWeatherAlerts(
+        rules,
+        { latitude: 6.9271, longitude: 79.8612, name: 'Colombo' },
+        'jwt-token-xyz'
+      );
+
+      assert.ok(requestedUrl.includes('/api/weather/alerts/evaluate'));
+      assert.strictEqual(requestedMethod, 'POST');
+      assert.strictEqual(requestedHeaders?.Authorization, 'Bearer jwt-token-xyz');
+      assert.strictEqual(requestedHeaders?.['Content-Type'], 'application/json');
+      assert.strictEqual(requestedBody.rules.length, 1);
+      assert.strictEqual(report.triggeredCount, 1);
+      assert.strictEqual(report.alerts[0].actualValue, 33.5);
+    });
+
+    it('throws descriptive error on evaluation API failure', async () => {
+      globalThis.fetch = (async () => ({
+        ok: false,
+        json: async () => ({ error: 'Alert evaluation timed out' }),
+      })) as any;
+
+      await assert.rejects(
+        async () => {
+          await evaluateWeatherAlerts([]);
+        },
+        {
+          name: 'Error',
+          message: 'Alert evaluation timed out',
         }
       );
     });

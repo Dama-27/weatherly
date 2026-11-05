@@ -77,6 +77,7 @@ Base URL: `http://localhost:3000`
 | `GET` | `/api/weather/daily?lat={lat}&lon={lon}&name={name}` | Returns 7-day daily forecast (min/max temp, UV max, rain sum) | Optional |
 | `GET` | `/api/weather/intelligence?lat={lat}&lon={lon}&name={name}` | Returns Comfort Score, active weather hazard risk assessment, and synthesis | Optional |
 | `GET` | `/api/weather/recommendations?lat={lat}&lon={lon}&name={name}` | Returns outdoor activity suitability, clothing suggestions, daily advice, and best outdoor window | Optional |
+| `POST` | `/api/weather/alerts/evaluate` | Evaluates user-configured weather alert rules against current and forecast conditions | Optional |
 
 ### 2. Preserved Legacy & System Endpoints
 | Method | Endpoint | Description | Auth Required |
@@ -104,6 +105,24 @@ Comfort Score = (Temperature Score * 0.50) + (Humidity Score * 0.30) + (Wind Sco
 - **Humidity (30%):** Ideal range 40%–60% (score 100). Penalizes dry air and high humidity.
 - **Wind Speed (10%):** Ideal range 5–15 km/h (score 100). Calm air scores 60; strong winds (>30 km/h) are penalized.
 - **Rain (10%):** 0 mm scores 100; precipitation progressively lowers the score.
+
+---
+
+## Personalized Weather Alerts & Notifications (MVP)
+
+Weatherly allows users to configure personal weather condition alerts:
+- **Temperature Thresholds:** Above or below a target value (°C).
+- **Rain Probability:** Exceeding a specified likelihood (%).
+- **UV Index:** Exceeding target exposure limit.
+- **Wind Speed:** Exceeding maximum comfort/safety speeds (km/h).
+- **Severe Weather Forecasts:** Thunderstorm activity (WMO 95, 96, 99) and heavy downpour/precipitation.
+
+### MVP Architecture & Storage:
+- **Rule Persistence:** Stored in browser `localStorage` scoped by authenticated Auth0 user ID (`weatherly_alerts_${userId}`) or guest fallback (`weatherly_alerts_guest`). No tokens or sensitive credentials are ever written.
+- **Evaluation Engine:** Backend service (`POST /api/weather/alerts/evaluate`) deterministically evaluates active rules against current conditions and 24-hour hourly forecast timelines.
+- **Deduplication:** At most one notification is triggered per rule and time window.
+- **Browser Notifications:** Utilizes the HTML5 Notifications API with explicit user opt-in (`default`, `granted`, `denied`, `unsupported`).
+- **Operational Limitation:** In this MVP, alerts and browser notifications are evaluated client-side when Weatherly is open and actively refreshing weather data. They do not constitute guaranteed real-time emergency civil warnings.
 
 ---
 

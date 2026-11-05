@@ -1,4 +1,7 @@
 import type {
+  AlertEvaluationReport,
+  AlertLocation,
+  AlertRule,
   CurrentWeather,
   DailyForecast,
   HourlyForecast,
@@ -185,6 +188,37 @@ export async function getWeatherRecommendations(
   if (!response.ok) {
     const errorJson = await response.json().catch(() => null);
     throw new Error(errorJson?.error || 'Failed to load weather recommendations');
+  }
+
+  const data = await response.json();
+  return data;
+}
+
+/**
+ * Evaluates configured weather alert rules against current conditions and near-term forecasts.
+ */
+export async function evaluateWeatherAlerts(
+  rules: AlertRule[],
+  defaultLocation?: AlertLocation,
+  accessToken?: string
+): Promise<AlertEvaluationReport> {
+  const headers: Record<string, string> = {
+    ...(getAuthHeaders(accessToken) as Record<string, string>),
+    'Content-Type': 'application/json',
+  };
+
+  const response = await fetch(`${API_URL}/weather/alerts/evaluate`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      rules,
+      defaultLocation,
+    }),
+  });
+
+  if (!response.ok) {
+    const errorJson = await response.json().catch(() => null);
+    throw new Error(errorJson?.error || 'Failed to evaluate weather alerts');
   }
 
   const data = await response.json();

@@ -8,10 +8,12 @@ import { getCityCodes } from "../services/city.service";
 import { createRankedWeatherResults } from "../services/weather-analytics.service";
 import { analyzeWeather } from "../services/weather-intelligence.service";
 import { generateRecommendations } from "../services/weather-recommendation.service";
+import { evaluateAlertRules, MVP_ALERT_DISCLAIMER } from "../services/weather-alert.service";
 import { getWeatherByCityCode } from "../services/weather.service";
 import type { CompleteWeatherResponse, CurrentWeather } from "../types/weather-domain.types";
 import type { WeatherIntelligenceReport } from "../types/weather-intelligence.types";
 import type { WeatherRecommendationsReport } from "../types/weather-recommendation.types";
+import type { AlertRule, TriggeredAlert } from "../types/weather-alert.types";
 import {
   currentWeatherCacheKey,
   dailyWeatherCacheKey,
@@ -279,6 +281,107 @@ export async function getWeatherRecommendationsByCoords(
     response.json(report);
   } catch (err: unknown) {
     handleWeatherControllerError(err, response, 'weather recommendations');
+  }
+}
+
+/**
+ * POST /api/weather/alerts/evaluate
+ * Evaluates configured weather alert rules against current conditions and near-term forecasts.
+ * Accepts { rules: AlertRule[], defaultLocation?: AlertLocation }.
+ */
+export async function evaluateWeatherAlerts(
+  request: Request,
+  response: Response
+): Promise<void> {
+  try {
+    const rules = Array.isArray(request.body?.rules) ? (request.body.rules as AlertRule[]) : [];
+    const enabledRules = rules.filter((r) => r && r.enabled);
+
+    if (enabledRules.length === 0) {
+      response.json({
+        evaluatedCount: 0,
+        triggeredCount: 0,
+        alerts: [],
+        disclaimer: MVP_ALERT_DISCLAIMER,
+        evaluatedAt: new Date().toISOString(),
+      });
+      return;
+    }
+
+    // Optional query coordinate fallback
+    let fallbackCoords: { latitude: number; longitude: number; name?: string } | undefined;
+    if (request.query.lat && request.query.lon) {
+      try {
+        const parsed = parseCoordinates(request.query.lat, request.query.lon);
+        fallbackCoords = {
+          ...parsed,
+          name: typeof request.query.name === 'string' ? request.query.name : undefined,
+        };
+      } catch {
+        // ignore fallback parse error
+      }
+    } else if (request.body?.defaultLocation) {
+      fallbackCoords = request.body.defaultLocation;
+    }
+
+    // Group rules by location
+    const locationMap = new Map<
+      string,
+      { location: { latitude: number; longitude: number; name: string }; rules: AlertRule[] }
+    >();
+
+    for (const rule of enabledRules) {
+      const lat = rule.location?.latitude ?? fallbackCoords?.latitude;
+      const lon = rule.location?.longitude ?? fallbackCoords?.longitude;
+      const name = rule.location?.name || fallbackCoords?.name || 'Selected Location';
+
+      if (
+        typeof lat !== 'number' ||
+        typeof lon !== 'number' ||
+        Number.isNaN(lat) ||
+        Number.isNaN(lon)
+      ) {
+        continue;
+      }
+
+      const key = `${Math.round(lat * 100) / 100}:${Math.round(lon * 100) / 100}`;
+      if (!locationMap.has(key)) {
+        locationMap.set(key, {
+          location: { latitude: lat, longitude: lon, name },
+          rules: [],
+        });
+      }
+      locationMap.get(key)!.rules.push(rule);
+    }
+
+    const provider = createWeatherProvider(env.weatherProvider);
+    const allTriggeredAlerts: TriggeredAlert[] = [];
+    let evaluatedCount = 0;
+
+    for (const { location, rules: locRules } of locationMap.values()) {
+      evaluatedCount += locRules.length;
+      const forecast: CompleteWeatherResponse = await provider.getForecast(
+        { latitude: location.latitude, longitude: location.longitude },
+        { days: 2, includeHourly: true },
+        location.name
+      );
+
+      const report = evaluateAlertRules(locRules, forecast.current, forecast.hourly);
+      allTriggeredAlerts.push(...report.alerts);
+    }
+
+    const severityRank = { severe: 3, warning: 2, info: 1 };
+    allTriggeredAlerts.sort((a, b) => severityRank[b.severity] - severityRank[a.severity]);
+
+    response.json({
+      evaluatedCount,
+      triggeredCount: allTriggeredAlerts.length,
+      alerts: allTriggeredAlerts,
+      disclaimer: MVP_ALERT_DISCLAIMER,
+      evaluatedAt: new Date().toISOString(),
+    });
+  } catch (err: unknown) {
+    handleWeatherControllerError(err, response, 'weather alert evaluation');
   }
 }
 

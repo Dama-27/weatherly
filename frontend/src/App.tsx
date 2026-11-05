@@ -9,20 +9,31 @@ import UserHeader from './components/UserHeader';
 import WeatherCard from './components/WeatherCard';
 import WeatherMetricsGrid from './components/WeatherMetricsGrid';
 import WeatherRecommendationsSection from './components/WeatherRecommendationsSection';
+import WeatherAlertsSection from './components/WeatherAlertsSection';
 import WeatherTable from './components/WeatherTable';
 import {
+  evaluateWeatherAlerts,
   getCurrentWeather,
   getDailyForecast,
   getHourlyForecast,
   getWeatherData,
   getWeatherRecommendations,
 } from './services/weather.service';
+import {
+  createAlertRule,
+  deleteAlertRule,
+  getStoredAlerts,
+  toggleAlertRule,
+} from './utils/alert-storage';
+import { notifyTriggeredAlert } from './utils/browser-notifications';
 import { getWeatherTheme } from './utils/weather-theme';
 import type {
+  AlertRule,
   CurrentWeather,
   DailyForecast,
   HourlyForecast,
   SavedLocation,
+  TriggeredAlert,
   WeatherRecommendationsReport,
   WeatherResult,
 } from './types/weather';
@@ -58,7 +69,7 @@ function getInitialLocation(): SavedLocation {
 }
 
 export default function App() {
-  const { isAuthenticated, isLoading, error: authError, getAccessTokenSilently } = useAuth0();
+  const { isAuthenticated, isLoading, error: authError, user, getAccessTokenSilently } = useAuth0();
 
   // Navigation state
   const [activeView, setActiveView] = useState<'personal' | 'rankings'>('personal');
@@ -72,6 +83,35 @@ export default function App() {
   const [weatherLoading, setWeatherLoading] = useState(false);
   const [weatherError, setWeatherError] = useState<string | null>(null);
   const [reloadTrigger, setReloadTrigger] = useState(0);
+
+  // Weather alerts state (scoped to user.sub)
+  const [alerts, setAlerts] = useState<AlertRule[]>(() => getStoredAlerts(user?.sub));
+  const [triggeredAlerts, setTriggeredAlerts] = useState<TriggeredAlert[]>([]);
+  const [alertsDisclaimer, setAlertsDisclaimer] = useState<string | undefined>();
+  const [alertsEvaluating, setAlertsEvaluating] = useState(false);
+
+  // Sync stored alerts when user ID changes (e.g. login/logout)
+  const [prevUserSub, setPrevUserSub] = useState(user?.sub);
+  if (user?.sub !== prevUserSub) {
+    setPrevUserSub(user?.sub);
+    setAlerts(getStoredAlerts(user?.sub));
+  }
+
+  // Alert management handlers
+  const handleCreateAlert = (ruleData: Omit<AlertRule, 'id' | 'createdAt'>) => {
+    createAlertRule(ruleData, user?.sub);
+    setAlerts(getStoredAlerts(user?.sub));
+  };
+
+  const handleToggleAlert = (id: string, enabled: boolean) => {
+    toggleAlertRule(id, enabled, user?.sub);
+    setAlerts(getStoredAlerts(user?.sub));
+  };
+
+  const handleDeleteAlert = (id: string) => {
+    deleteAlertRule(id, user?.sub);
+    setAlerts(getStoredAlerts(user?.sub));
+  };
 
   // Geolocation state
   const [isLocating, setIsLocating] = useState(false);
@@ -136,6 +176,59 @@ export default function App() {
       isMounted = false;
     };
   }, [isAuthenticated, selectedLocation, reloadTrigger, getAccessTokenSilently]);
+
+  // Evaluate weather alerts against current & forecast conditions
+  useEffect(() => {
+    if (!isAuthenticated || alerts.length === 0) {
+      return;
+    }
+
+    let isMounted = true;
+
+    async function evaluateAlerts() {
+      try {
+        setAlertsEvaluating(true);
+        let token: string | undefined;
+        try {
+          token = await getAccessTokenSilently();
+        } catch {
+          // Token unavailable
+        }
+
+        const report = await evaluateWeatherAlerts(
+          alerts,
+          {
+            name: selectedLocation.name,
+            latitude: selectedLocation.latitude,
+            longitude: selectedLocation.longitude,
+          },
+          token
+        );
+
+        if (isMounted) {
+          setTriggeredAlerts(report.alerts || []);
+          setAlertsDisclaimer(report.disclaimer);
+
+          // Dispatch native desktop notifications for triggered alerts
+          for (const alert of report.alerts || []) {
+            notifyTriggeredAlert(alert);
+          }
+        }
+      } catch (err) {
+        console.warn('Weather alerts evaluation failed:', err);
+      } finally {
+        if (isMounted) {
+          setAlertsEvaluating(false);
+        }
+      }
+    }
+
+    evaluateAlerts();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [alerts, selectedLocation, currentWeather, isAuthenticated, getAccessTokenSilently]);
 
   // Load 10-city comfort ranking data when rankings view is activated
   useEffect(() => {
@@ -368,6 +461,22 @@ export default function App() {
                   loading={weatherLoading}
                   error={weatherError}
                   onRetry={() => setReloadTrigger((n) => n + 1)}
+                />
+
+                {/* Personalized Weather Alerts & Notifications Section */}
+                <WeatherAlertsSection
+                  currentLocation={{
+                    name: selectedLocation.name,
+                    latitude: selectedLocation.latitude,
+                    longitude: selectedLocation.longitude,
+                  }}
+                  rules={alerts}
+                  triggeredAlerts={alerts.length === 0 ? [] : triggeredAlerts}
+                  disclaimer={alertsDisclaimer}
+                  isEvaluating={alertsEvaluating}
+                  onCreateRule={handleCreateAlert}
+                  onToggleRule={handleToggleAlert}
+                  onDeleteRule={handleDeleteAlert}
                 />
 
                 {/* 7-Day Forecast Section */}

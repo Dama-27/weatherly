@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Request, Response } from 'express';
 import { clearCache } from '../services/cache.service';
 import {
+  evaluateWeatherAlerts,
   getCurrentWeatherByCoords,
   getDailyForecastByCoords,
   getHourlyForecastByCoords,
@@ -10,8 +11,8 @@ import {
   getWeatherRecommendationsByCoords,
 } from './weather.controller';
 
-function createMockReqRes(query: Record<string, any> = {}) {
-  const req = { query } as unknown as Request;
+function createMockReqRes(query: Record<string, any> = {}, body: Record<string, any> = {}) {
+  const req = { query, body } as unknown as Request;
   let statusCode = 200;
   let responseBody: any = null;
 
@@ -398,6 +399,86 @@ describe('Weather Controller (Coordinate-based APIs)', () => {
 
       const { req, res, getStatusCode, getBody } = createMockReqRes({ lat: '7.2083', lon: '79.8358' });
       await getWeatherRecommendationsByCoords(req, res);
+
+      expect(getStatusCode()).toBe(504);
+      expect(getBody().error).toContain('timed out');
+    });
+  });
+
+  describe('POST /api/weather/alerts/evaluate', () => {
+    it('returns empty alert report when rules array is empty', async () => {
+      const { req, res, getStatusCode, getBody } = createMockReqRes({}, { rules: [] });
+      await evaluateWeatherAlerts(req, res);
+
+      expect(getStatusCode()).toBe(200);
+      const body = getBody();
+      expect(body.evaluatedCount).toBe(0);
+      expect(body.triggeredCount).toBe(0);
+      expect(body.alerts).toEqual([]);
+      expect(body.disclaimer).toContain('MVP Notice');
+    });
+
+    it('evaluates enabled rules against weather forecast and returns triggered alerts', async () => {
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: vi.fn().mockResolvedValue(mockOpenMeteoPayload),
+      } as unknown as Response);
+
+      const rules = [
+        {
+          id: 'rule-temp-trigger',
+          type: 'temp_above',
+          threshold: 28.0, // mock payload temp is 29.5
+          enabled: true,
+          location: { latitude: 7.2083, longitude: 79.8358, name: 'Negombo' },
+          createdAt: '2026-11-05T10:00:00Z',
+        },
+        {
+          id: 'rule-disabled-no-trigger',
+          type: 'temp_above',
+          threshold: 20.0,
+          enabled: false,
+          location: { latitude: 7.2083, longitude: 79.8358, name: 'Negombo' },
+          createdAt: '2026-11-05T10:00:00Z',
+        },
+      ];
+
+      const { req, res, getStatusCode, getBody } = createMockReqRes(
+        { lat: '7.2083', lon: '79.8358' },
+        { rules }
+      );
+
+      await evaluateWeatherAlerts(req, res);
+
+      expect(getStatusCode()).toBe(200);
+      const body = getBody();
+      expect(body.evaluatedCount).toBe(1); // Only enabled rule counted
+      expect(body.triggeredCount).toBe(1);
+      expect(body.alerts[0].ruleId).toBe('rule-temp-trigger');
+      expect(body.alerts[0].actualValue).toBe(30.5);
+    });
+
+    it('returns 504 when weather provider aborts/times out during evaluation', async () => {
+      globalThis.fetch = vi.fn().mockImplementation(() => {
+        const error = new Error('The operation was aborted');
+        error.name = 'AbortError';
+        return Promise.reject(error);
+      });
+
+      const rules = [
+        {
+          id: 'rule-1',
+          type: 'temp_above',
+          threshold: 25.0,
+          enabled: true,
+          location: { latitude: 7.2083, longitude: 79.8358, name: 'Negombo' },
+          createdAt: '2026-11-05T10:00:00Z',
+        },
+      ];
+
+      const { req, res, getStatusCode, getBody } = createMockReqRes({}, { rules });
+      await evaluateWeatherAlerts(req, res);
 
       expect(getStatusCode()).toBe(504);
       expect(getBody().error).toContain('timed out');
