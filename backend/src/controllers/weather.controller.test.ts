@@ -6,6 +6,7 @@ import {
   getDailyForecastByCoords,
   getHourlyForecastByCoords,
   getWeather,
+  getWeatherIntelligenceByCoords,
 } from './weather.controller';
 
 function createMockReqRes(query: Record<string, any> = {}) {
@@ -241,6 +242,83 @@ describe('Weather Controller (Coordinate-based APIs)', () => {
       const { req, res, getStatusCode } = createMockReqRes({ lat: '7.20' });
       await getDailyForecastByCoords(req, res);
       expect(getStatusCode()).toBe(400);
+    });
+  });
+
+  describe('GET /api/weather/intelligence', () => {
+    it('returns structured intelligence report with comfort score and risk assessment', async () => {
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: vi.fn().mockResolvedValue(mockOpenMeteoPayload),
+      } as unknown as Response);
+
+      const { req, res, getStatusCode, getBody } = createMockReqRes({
+        lat: '7.2083',
+        lon: '79.8358',
+        name: 'Negombo',
+      });
+
+      await getWeatherIntelligenceByCoords(req, res);
+
+      expect(getStatusCode()).toBe(200);
+      const body = getBody();
+      expect(body.location.name).toBe('Negombo');
+      expect(body).toHaveProperty('comfortScore');
+      expect(typeof body.comfortScore).toBe('number');
+      expect(body).toHaveProperty('overallStatus');
+      expect(['optimal', 'favorable', 'caution', 'adverse']).toContain(body.overallStatus);
+      expect(body).toHaveProperty('summary');
+      expect(Array.isArray(body.risks)).toBe(true);
+      expect(body).toHaveProperty('advisoryDisclaimer');
+      expect(body.advisoryDisclaimer).toContain('does not replace or supersede official warnings');
+
+      // Given mock payload has apparent_temp 36°C and uv_index 8.0, check detected risks
+      expect(body.risks.length).toBeGreaterThan(0);
+      const riskTypes = body.risks.map((r: any) => r.type);
+      expect(riskTypes).toContain('extreme_heat');
+      expect(riskTypes).toContain('high_uv');
+    });
+
+    it('returns 400 when coordinates are invalid', async () => {
+      const { req, res, getStatusCode, getBody } = createMockReqRes({ lat: 'invalid', lon: '79.8' });
+      await getWeatherIntelligenceByCoords(req, res);
+
+      expect(getStatusCode()).toBe(400);
+      expect(getBody().error).toContain('valid finite number');
+    });
+
+    it('reuses cached intelligence report on subsequent identical queries', async () => {
+      const fetchSpy = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: vi.fn().mockResolvedValue(mockOpenMeteoPayload),
+      } as unknown as Response);
+
+      globalThis.fetch = fetchSpy;
+
+      const { req: req1, res: res1 } = createMockReqRes({ lat: '7.2083', lon: '79.8358', name: 'Negombo' });
+      const { req: req2, res: res2, getBody } = createMockReqRes({ lat: '7.2083', lon: '79.8358', name: 'Negombo' });
+
+      await getWeatherIntelligenceByCoords(req1, res1);
+      await getWeatherIntelligenceByCoords(req2, res2);
+
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+      expect(getBody().location.name).toBe('Negombo');
+    });
+
+    it('returns 504 on provider timeout', async () => {
+      globalThis.fetch = vi.fn().mockImplementation(() => {
+        const error = new Error('The operation was aborted');
+        error.name = 'AbortError';
+        return Promise.reject(error);
+      });
+
+      const { req, res, getStatusCode, getBody } = createMockReqRes({ lat: '7.2083', lon: '79.8358' });
+      await getWeatherIntelligenceByCoords(req, res);
+
+      expect(getStatusCode()).toBe(504);
+      expect(getBody().error).toContain('timed out');
     });
   });
 

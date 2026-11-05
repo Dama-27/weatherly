@@ -41,6 +41,14 @@ export function dailyWeatherCacheKey(lat: number, lon: number, days: number = 7)
 }
 
 /**
+ * Cache key for weather intelligence by coordinates.
+ * Format: weather:intelligence:{lat}:{lon}
+ */
+export function intelligenceWeatherCacheKey(lat: number, lon: number): string {
+  return `weather:intelligence:${roundCoordinate(lat)}:${roundCoordinate(lon)}`;
+}
+
+/**
  * Cache key for location search results.
  * Format: location:search:{normalizedQuery}:{limit}
  */

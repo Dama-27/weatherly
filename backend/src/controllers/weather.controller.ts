@@ -6,12 +6,15 @@ import { createWeatherProvider } from "../providers/weather-provider.factory";
 import { getCached, setCached } from "../services/cache.service";
 import { getCityCodes } from "../services/city.service";
 import { createRankedWeatherResults } from "../services/weather-analytics.service";
+import { analyzeWeather } from "../services/weather-intelligence.service";
 import { getWeatherByCityCode } from "../services/weather.service";
 import type { CompleteWeatherResponse, CurrentWeather } from "../types/weather-domain.types";
+import type { WeatherIntelligenceReport } from "../types/weather-intelligence.types";
 import {
   currentWeatherCacheKey,
   dailyWeatherCacheKey,
   hourlyWeatherCacheKey,
+  intelligenceWeatherCacheKey,
 } from "../utils/cache-keys";
 
 const WEATHER_CACHE_TTL_SECONDS = 300;
@@ -58,7 +61,10 @@ export async function getCurrentWeatherByCoords(
     if (cached) {
       console.log(`[Cache] HIT ${cacheKey}`);
       response.json({
-        location: cached.location,
+        location: {
+          ...cached.location,
+          name: locationName || cached.location.name,
+        },
         current: cached,
       });
       return;
@@ -99,7 +105,13 @@ export async function getHourlyForecastByCoords(
 
     if (cached) {
       console.log(`[Cache] HIT ${cacheKey}`);
-      response.json(cached);
+      response.json({
+        ...cached,
+        location: {
+          ...cached.location,
+          name: locationName || cached.location.name,
+        },
+      });
       return;
     }
 
@@ -145,7 +157,13 @@ export async function getDailyForecastByCoords(
 
     if (cached) {
       console.log(`[Cache] HIT ${cacheKey}`);
-      response.json(cached);
+      response.json({
+        ...cached,
+        location: {
+          ...cached.location,
+          name: locationName || cached.location.name,
+        },
+      });
       return;
     }
 
@@ -168,6 +186,50 @@ export async function getDailyForecastByCoords(
     response.json(payload);
   } catch (err: unknown) {
     handleWeatherControllerError(err, response, 'daily forecast');
+  }
+}
+
+/**
+ * GET /api/weather/intelligence?lat=...&lon=...
+ * Calculates Comfort Score, evaluates active weather hazards, and synthesizes overall weather intelligence.
+ */
+export async function getWeatherIntelligenceByCoords(
+  request: Request,
+  response: Response
+): Promise<void> {
+  try {
+    const { latitude, longitude } = parseCoordinates(request.query.lat, request.query.lon);
+    const locationName = typeof request.query.name === 'string' ? request.query.name : undefined;
+
+    const cacheKey = intelligenceWeatherCacheKey(latitude, longitude);
+    const cached = getCached<WeatherIntelligenceReport>(cacheKey);
+
+    if (cached) {
+      console.log(`[Cache] HIT ${cacheKey}`);
+      response.json({
+        ...cached,
+        location: {
+          ...cached.location,
+          name: locationName || cached.location.name,
+        },
+      });
+      return;
+    }
+
+    console.log(`[Cache] MISS ${cacheKey}`);
+    const provider = createWeatherProvider(env.weatherProvider);
+    const currentWeather = await provider.getCurrentWeather(
+      { latitude, longitude },
+      locationName
+    );
+
+    const report = analyzeWeather(currentWeather);
+
+    setCached(cacheKey, report, WEATHER_CACHE_TTL_SECONDS);
+
+    response.json(report);
+  } catch (err: unknown) {
+    handleWeatherControllerError(err, response, 'weather intelligence');
   }
 }
 

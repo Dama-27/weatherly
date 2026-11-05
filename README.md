@@ -75,6 +75,7 @@ Base URL: `http://localhost:3000`
 | `GET` | `/api/weather/current?lat={lat}&lon={lon}&name={name}` | Returns normalized current conditions and location metadata | Optional |
 | `GET` | `/api/weather/hourly?lat={lat}&lon={lon}&name={name}` | Returns next 24 hours of hourly forecast with timezone | Optional |
 | `GET` | `/api/weather/daily?lat={lat}&lon={lon}&name={name}` | Returns 7-day daily forecast (min/max temp, UV max, rain sum) | Optional |
+| `GET` | `/api/weather/intelligence?lat={lat}&lon={lon}&name={name}` | Returns Comfort Score, active weather hazard risk assessment, and synthesis | Optional |
 
 ### 2. Preserved Legacy & System Endpoints
 | Method | Endpoint | Description | Auth Required |
