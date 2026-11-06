@@ -116,3 +116,21 @@ variable "lambda_package_path" {
   type        = string
   default     = ""
 }
+
+variable "frontend_bucket_name" {
+  description = "Optional custom name for frontend S3 bucket (defaults to weatherly-<env>-frontend-<account-id>)"
+  type        = string
+  default     = ""
+}
+
+variable "cloudfront_price_class" {
+  description = "CloudFront distribution price class (PriceClass_100: US/Europe, PriceClass_200: adds Asia/Africa/Middle East, PriceClass_All: global edge locations)"
+  type        = string
+  default     = "PriceClass_100"
+}
+
+variable "frontend_html_cache_ttl" {
+  description = "Default TTL in seconds for index.html in CloudFront (0 ensures users receive latest SPA deployments immediately)"
+  type        = number
+  default     = 0
+}

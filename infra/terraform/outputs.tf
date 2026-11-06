@@ -52,3 +52,37 @@ output "worker_log_group" {
   description = "CloudWatch log group for the Worker Lambda"
   value       = aws_cloudwatch_log_group.worker_lambda_logs.name
 }
+
+# -----------------------------------------------------------------------------
+# Frontend Hosting (S3 + CloudFront)
+# -----------------------------------------------------------------------------
+
+output "frontend_s3_bucket_name" {
+  description = "Name of the private S3 bucket hosting compiled frontend assets"
+  value       = aws_s3_bucket.frontend.id
+}
+
+output "frontend_s3_bucket_arn" {
+  description = "ARN of the private S3 bucket hosting compiled frontend assets"
+  value       = aws_s3_bucket.frontend.arn
+}
+
+output "frontend_cloudfront_distribution_id" {
+  description = "ID of the CloudFront distribution serving the SPA frontend"
+  value       = aws_cloudfront_distribution.frontend.id
+}
+
+output "frontend_cloudfront_distribution_arn" {
+  description = "ARN of the CloudFront distribution serving the SPA frontend"
+  value       = aws_cloudfront_distribution.frontend.arn
+}
+
+output "frontend_cloudfront_domain" {
+  description = "CloudFront default domain name for the Weatherly frontend application"
+  value       = aws_cloudfront_distribution.frontend.domain_name
+}
+
+output "frontend_url" {
+  description = "Public HTTPS entrypoint URL for the Weatherly frontend application"
+  value       = "https://${aws_cloudfront_distribution.frontend.domain_name}"
+}

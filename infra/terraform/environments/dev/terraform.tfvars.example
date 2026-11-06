@@ -27,3 +27,8 @@ worker_schedule_expression = "rate(1 hour)"
 # CloudWatch & Database
 log_retention_days            = 14
 enable_point_in_time_recovery = true
+
+# Frontend Hosting (S3 + CloudFront)
+# frontend_bucket_name    = "weatherly-dev-frontend-123456789012" # Optional: defaults to weatherly-dev-frontend-<account-id>
+cloudfront_price_class  = "PriceClass_100"                      # PriceClass_100 (US/Europe) minimizes cost
+frontend_html_cache_ttl = 0                                     # 0 ensures index.html is revalidated immediately on new deploys

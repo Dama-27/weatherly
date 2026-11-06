@@ -12,7 +12,29 @@ import type {
   WeatherResult,
 } from '../types/weather';
 
-const API_URL = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_URL) || '/api';
+/**
+ * Resolves the base API URL based on environment configuration.
+ * Normalizes trailing slashes and appends the standard '/api' prefix when given an absolute origin.
+ *
+ * Supports:
+ * - Local development proxy: '/api' (default)
+ * - Custom relative endpoint: '/api'
+ * - Direct Lambda Function URL origin: 'https://xxx.lambda-url.us-east-1.on.aws' -> 'https://xxx.lambda-url.us-east-1.on.aws/api'
+ * - Explicit full endpoint: 'https://xxx.lambda-url.us-east-1.on.aws/api'
+ */
+export function resolveApiUrl(rawUrl?: string): string {
+  if (!rawUrl) return '/api';
+  const trimmed = rawUrl.trim().replace(/\/+$/, '');
+  if (!trimmed) return '/api';
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+    return trimmed.endsWith('/api') ? trimmed : `${trimmed}/api`;
+  }
+  return trimmed;
+}
+
+export const API_URL = resolveApiUrl(
+  typeof import.meta !== 'undefined' ? import.meta.env?.VITE_API_URL : undefined,
+);
 
 export interface WeatherData {
   id?: number;

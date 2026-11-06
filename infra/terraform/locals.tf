@@ -12,6 +12,9 @@ locals {
   dynamodb_table_name = "${local.name_prefix}-alerts"
   dynamodb_gsi_name   = "GSI1"
 
+  # S3 bucket name (globally unique)
+  frontend_bucket_name = var.frontend_bucket_name != "" ? var.frontend_bucket_name : "${local.name_prefix}-frontend-${data.aws_caller_identity.current.account_id}"
+
   # Path to deployment package
   lambda_package_file = var.lambda_package_path != "" ? var.lambda_package_path : data.archive_file.backend_package.output_path
 }

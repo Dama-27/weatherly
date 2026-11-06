@@ -5,3 +5,7 @@ data "archive_file" "backend_package" {
   source_dir  = "${path.module}/../../backend/dist"
   output_path = "${path.module}/.terraform/builds/weatherly_backend.zip"
 }
+
+# Current AWS account and region context
+data "aws_caller_identity" "current" {}
+data "aws_region" "current" {}

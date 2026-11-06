@@ -13,6 +13,7 @@ import {
   getWeatherRecommendations,
   searchLocations,
   updateUserAlert,
+  resolveApiUrl,
 } from './weather.service.ts';
 
 describe('Frontend Weather Service', () => {
@@ -20,6 +21,42 @@ describe('Frontend Weather Service', () => {
 
   afterEach(() => {
     globalThis.fetch = originalFetch;
+  });
+
+  describe('resolveApiUrl', () => {
+    it('defaults to /api when undefined, empty, or whitespace', () => {
+      assert.strictEqual(resolveApiUrl(), '/api');
+      assert.strictEqual(resolveApiUrl(''), '/api');
+      assert.strictEqual(resolveApiUrl('   '), '/api');
+    });
+
+    it('preserves custom relative API prefixes and strips trailing slashes', () => {
+      assert.strictEqual(resolveApiUrl('/api'), '/api');
+      assert.strictEqual(resolveApiUrl('/api/'), '/api');
+      assert.strictEqual(resolveApiUrl('/v1/api'), '/v1/api');
+    });
+
+    it('automatically appends /api to absolute HTTP and HTTPS origins', () => {
+      assert.strictEqual(
+        resolveApiUrl('https://abc.lambda-url.us-east-1.on.aws'),
+        'https://abc.lambda-url.us-east-1.on.aws/api'
+      );
+      assert.strictEqual(
+        resolveApiUrl('https://abc.lambda-url.us-east-1.on.aws/'),
+        'https://abc.lambda-url.us-east-1.on.aws/api'
+      );
+    });
+
+    it('preserves explicit /api on absolute HTTP and HTTPS origins', () => {
+      assert.strictEqual(
+        resolveApiUrl('https://abc.lambda-url.us-east-1.on.aws/api'),
+        'https://abc.lambda-url.us-east-1.on.aws/api'
+      );
+      assert.strictEqual(
+        resolveApiUrl('https://abc.lambda-url.us-east-1.on.aws/api/'),
+        'https://abc.lambda-url.us-east-1.on.aws/api'
+      );
+    });
   });
 
   describe('searchLocations', () => {

@@ -192,50 +192,51 @@ Weatherly supports personalized weather condition alerts with dual-mode persiste
 
 ## AWS Infrastructure as Code (Terraform)
 
-Weatherly includes a complete, production-ready Terraform configuration under `infra/terraform/` to provision the serverless architecture on AWS.
+Weatherly includes a complete, production-ready Terraform configuration under `infra/terraform/` to provision the full serverless architecture on AWS, including backend APIs, worker Lambda, DynamoDB persistence, and S3 + CloudFront frontend hosting.
 
 ```text
-┌────────────────────────────────────────────────────────────────────────┐
-│                        AWS Serverless Architecture                     │
-├────────────────────────────────────────────────────────────────────────┤
-│                                                                        │
-│   Web Browser Client (SPA)                                             │
-│       │                                                                │
-│       ▼ HTTPS Request (CORS protected)                                 │
-│   ┌──────────────────────────────────────────────────────────────┐     │
-│   │ Lambda Function URL (Auth: NONE, verified via Auth0 JWT)     │     │
-│   └──────────────────────────────┬───────────────────────────────┘     │
-│                                  │                                     │
-│                                  ▼                                     │
-│   ┌──────────────────────────────────────────────────────────────┐     │
-│   │ API Lambda: weatherly-dev-api                                │     │
-│   │ Handler: dist/lambda.handler (@codegenie/serverless-express) │     │
-│   └──────────────┬───────────────────────────────┬───────────────┘     │
-│                  │                               │                     │
-│                  │ Open-Meteo & Gemini APIs      │ Read/Write Alerts   │
-│                  ▼                               ▼                     │
-│   ┌──────────────────────────────┐ ┌─────────────────────────────────┐ │
-│   │ External APIs (Internet)     │ │ DynamoDB Table                  │ │
-│   │ - Open-Meteo Weather         │ │ weatherly-dev-alerts            │ │
-│   │ - Google Gemini (Optional)   │ │ - PK / SK Single-Table          │ │
-│   └──────────────────────────────┘ │ - GSI1: ALERT#ENABLED (Sparse)  │ │
-│                                    │ - KMS Encryption, PITR, TTL     │ │
-│   ┌──────────────────────────────┐ └─────────────────▲───────────────┘ │
-│   │ EventBridge Rule             │                   │                 │
-│   │ rate(1 hour)                 │                   │ Bulk Evaluate   │
-│   └──────────────┬───────────────┘                   │ & Suppress      │
-│                  │ Periodic Trigger                  │                 │
-│                  ▼                                   │                 │
-│   ┌──────────────────────────────────────────────────┴───────────┐     │
-│   │ Scheduled Worker Lambda: weatherly-dev-scheduled-worker      │     │
-│   │ Handler: dist/workers/scheduled-alerts.worker.handler        │     │
-│   └──────────────────────────────────────────────────────────────┘     │
-│                                                                        │
-│   ┌──────────────────────────────────────────────────────────────┐     │
-│   │ Amazon CloudWatch Log Groups (/aws/lambda/weatherly-dev-*)   │     │
-│   │ Explicit log groups with configurable retention (14 days)    │     │
-│   └──────────────────────────────────────────────────────────────┘     │
-└────────────────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│                              AWS Serverless Architecture                               │
+├────────────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                        │
+│   Web Browser Client (SPA)                                                             │
+│       │                                                                                │
+│       ├─────────────────────────────────┐                                              │
+│       │ 1. HTTPS Static Assets          │ 2. HTTPS API Requests (Bearer Token / CORS)   │
+│       ▼                                 ▼                                              │
+│   ┌──────────────────────────────┐  ┌──────────────────────────────────────────────┐   │
+│   │ Amazon CloudFront (CDN)      │  │ Lambda Function URL (Auth: NONE)             │   │
+│   │ - HTTPS-only Viewer Protocol │  │ - Verified via Auth0 RS256 JWT claims        │   │
+│   │ - SPA Error Responses 403/404│  │ - CORS: Whitelists CloudFront & Dev Origins │   │
+│   │ - Hashed Assets: 1-Yr Cache  │  └──────────────────────┬───────────────────────┘   │
+│   │ - index.html: 0s TTL Cache   │                         │                           │
+│   └──────────────┬───────────────┘                         ▼                           │
+│                  │ SigV4 Signed        ┌───────────────────────────────────────────┐   │
+│                  │ via OAC             │ API Lambda: weatherly-dev-api             │   │
+│                  ▼                     │ Handler: dist/lambda.handler              │   │
+│   ┌──────────────────────────────┐     └─────────────┬─────────────────────┬───────┘   │
+│   │ Private S3 Frontend Bucket   │                   │                     │           │
+│   │ - Block Public Access: TRUE  │                   │ Open-Meteo & Gemini │ Read/Write│
+│   │ - SSE-S3 AES-256 Encryption  │                   ▼                     ▼           │
+│   │ - Versioning & Lifecycle Exp │     ┌────────────────────────┐ ┌──────────────────┐ │
+│   └──────────────────────────────┘     │ External APIs          │ │ DynamoDB Table   │ │
+│                                        │ - Open-Meteo Forecast  │ │ weatherly-dev-   │ │
+│   ┌──────────────────────────────┐     │ - Google Gemini (Opt)  │ │ alerts           │ │
+│   │ EventBridge Rule             │     └────────────────────────┘ │ - Single-Table   │ │
+│   │ rate(1 hour)                 │                                │ - GSI1 Sparse    │ │
+│   └──────────────┬───────────────┘                                │ - KMS, PITR, TTL │ │
+│                  │ Periodic Trigger                               └────────▲─────────┘ │
+│                  ▼                                                         │           │
+│   ┌────────────────────────────────────────────────────────────────────────┴───────┐   │
+│   │ Scheduled Worker Lambda: weatherly-dev-scheduled-worker                        │   │
+│   │ Handler: dist/workers/scheduled-alerts.worker.handler                          │   │
+│   └────────────────────────────────────────────────────────────────────────────────┘   │
+│                                                                                        │
+│   ┌────────────────────────────────────────────────────────────────────────────────┐   │
+│   │ Amazon CloudWatch Log Groups (/aws/lambda/weatherly-dev-*)                     │   │
+│   │ Explicit log groups with configurable retention (14 days)                      │   │
+│   └────────────────────────────────────────────────────────────────────────────────┘   │
+└────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### 1. Terraform Structure
@@ -246,13 +247,15 @@ infra/terraform/
 ├── providers.tf                         # AWS provider with region and default resource tags
 ├── variables.tf                         # Input variables, defaults, validation, and sensitivity flags
 ├── locals.tf                            # Naming prefixes, computed tags, and build artifact paths
-├── main.tf                              # Archive packaging (../../backend/dist -> lambda-package.zip)
+├── main.tf                              # Archive packaging & AWS caller identity context
 ├── dynamodb.tf                          # DynamoDB single-table with GSI1, PITR, KMS, and TTL
 ├── iam.tf                               # Least-privilege IAM execution roles and inline policies
 ├── lambda.tf                            # API Lambda + Function URL & Worker Lambda configuration
 ├── eventbridge.tf                       # Scheduled EventBridge rule, target, and invoke permissions
 ├── cloudwatch.tf                        # Explicit CloudWatch log groups with retention policies
-├── outputs.tf                           # Exported Function URL, Lambda ARNs, and table identifiers
+├── s3_frontend.tf                       # Private frontend S3 bucket, encryption, versioning & OAC policy
+├── cloudfront.tf                        # CloudFront OAC, cache policies, distribution & SPA routing
+├── outputs.tf                           # Exported Function URL, CloudFront URL, ARNs, and table identifiers
 ├── .gitignore                           # Ignores .terraform, *.tfstate, crash logs, and *.tfvars
 └── environments/
     └── dev/
@@ -263,9 +266,18 @@ infra/terraform/
 
 | Resource Type | Resource Identifier | Purpose & Specifications |
 |---|---|---|
+| `aws_s3_bucket` | `${project}-${env}-frontend-${account}` | Private S3 bucket storing compiled frontend assets; `force_destroy` enabled for non-prod. |
+| `aws_s3_bucket_public_access_block` | `${project}-${env}-frontend-pab` | Strictly blocks all public ACLs and bucket policies; S3 remains 100% private. |
+| `aws_s3_bucket_server_side_encryption_configuration` | `${project}-${env}-frontend-sse` | Default SSE-S3 encryption with Amazon managed keys (`AES256`). |
+| `aws_s3_bucket_versioning` | `${project}-${env}-frontend-ver` | Object versioning enabled for auditability and rollback safety. |
+| `aws_s3_bucket_lifecycle_configuration` | `${project}-${env}-frontend-lc` | Automatically expires noncurrent versions after 30 days to limit storage overhead. |
+| `aws_s3_bucket_policy` | `${project}-${env}-frontend-policy` | Restricts `s3:GetObject` access exclusively to the CloudFront distribution via SigV4 OAC (`AWS:SourceArn`). |
+| `aws_cloudfront_origin_access_control` | `${project}-${env}-frontend-oac` | SigV4 origin access control replacing legacy Origin Access Identity (OAI). |
+| `aws_cloudfront_cache_policy` | `${project}-${env}-frontend-html` | Custom low-TTL cache policy (`default_ttl = 0`, `max_ttl = 300`) for `index.html` preventing stale SPA deploys. |
+| `aws_cloudfront_distribution` | `${project}-${env}-frontend` | Global CDN with HTTPS redirect, HTTP/2 & IPv6, gzip/brotli compression, and SPA client-side routing fallback (403/404 -> `/index.html` with HTTP 200). |
 | `aws_dynamodb_table` | `${project}-${env}-alerts` | Single-table storage; `PAY_PER_REQUEST` billing; KMS encryption; PITR enabled; TTL on `ttl`; Sparse GSI1 (`ALERT#ENABLED`). |
 | `aws_lambda_function` | `${project}-${env}-api` | Express API handler (`dist/lambda.handler`); Node.js 20.x runtime; 512 MB memory; 15s timeout. |
-| `aws_lambda_function_url` | `${project}-${env}-api-url` | Direct HTTPS entrypoint (`AuthType: NONE`); CORS configured for frontend domain and localhost. |
+| `aws_lambda_function_url` | `${project}-${env}-api-url` | Direct HTTPS entrypoint (`AuthType: NONE`); CORS automatically authorizes provisioned CloudFront domain. |
 | `aws_lambda_function` | `${project}-${env}-scheduled-worker` | Scheduled alert evaluation worker (`dist/workers/scheduled-alerts.worker.handler`); 256 MB memory; 60s timeout. |
 | `aws_cloudwatch_event_rule` | `${project}-${env}-worker-schedule` | EventBridge periodic schedule (default: `rate(1 hour)`). |
 | `aws_cloudwatch_event_target` | `${project}-${env}-worker-target` | Dispatches EventBridge trigger directly to the scheduled worker Lambda. |
@@ -275,14 +287,56 @@ infra/terraform/
 | `aws_iam_role` & `aws_iam_policy` | `${project}-${env}-api-role` | API Lambda execution role; allows CloudWatch logging to specific group ARN; allows DynamoDB operations strictly on base table (`USER#*`). |
 | `aws_iam_role` & `aws_iam_policy` | `${project}-${env}-worker-role` | Worker execution role; allows CloudWatch logging to worker group ARN; allows GSI1 query and deduplication record writes (`EVAL#*`). |
 
-### 3. Least-Privilege IAM Security Model
+### 3. Frontend Cache & Invalidation Strategy
+
+| Asset Category | Target Path | Cache-Control Header | CloudFront Policy | Invalidation Strategy |
+|---|---|---|---|---|
+| **Hashed Code & Styles** | `/assets/*` (JS, CSS) | `public, max-age=31536000, immutable` | `Managed-CachingOptimized` (1 day – 1 year) | Never invalidated; cache-busted by Vite content hash. |
+| **Root Entrypoint** | `/index.html` | `public, max-age=0, must-revalidate` | Custom `frontend_html` (`default_ttl = 0`) | Invalidated on each deployment (`aws cloudfront create-invalidation`). |
+| **Static Icons** | `/favicon.ico`, `/vite.svg` | `public, max-age=0, must-revalidate` | Custom `frontend_html` (`default_ttl = 0`) | Invalidated on deployment if updated. |
+
+- **Zero Stale Versions:** Because `index.html` is never cached long-term and is explicitly invalidated upon deployment, users immediately download the new `index.html` referencing the new hashed JS and CSS assets.
+- **SPA Routing Fallback:** Direct navigation or browser refresh on deep paths (e.g. `https://d1234.cloudfront.net/alerts`) is intercepted by CloudFront custom error responses (HTTP 403/404) and served `/index.html` with HTTP 200, allowing the client-side router to mount seamlessly without S3 `NoSuchKey` errors.
+
+### 4. Frontend Deployment Automation
+
+Deployment is automated through cross-platform scripts (`scripts/deploy-frontend.mjs` and `scripts/deploy-frontend.sh`):
+
+```bash
+# 1. From the frontend directory:
+cd frontend
+npm run deploy
+
+# Or pass explicit S3 bucket and CloudFront distribution targets:
+npm run deploy -- --bucket weatherly-dev-frontend-123456789012 --distribution-id E1234EXAMPLE
+```
+
+The deployment pipeline performs:
+1. **AWS Identity Verification:** Verifies active credentials (`aws sts get-caller-identity`). If credentials are missing, deployment terminates safely without modifying cloud resources.
+2. **Target Discovery:** Automatically extracts the provisioned S3 bucket name and CloudFront distribution ID from `infra/terraform` outputs if not explicitly passed as arguments or environment variables.
+3. **Production Build:** Executes `tsc -b && vite build` inside `frontend/`.
+4. **Hashed Assets Upload:** Syncs `dist/assets` with `Cache-Control: public, max-age=31536000, immutable`.
+5. **Root Files Upload:** Syncs `dist/index.html` and other root files with `Cache-Control: public, max-age=0, must-revalidate`. Excludes `.env` files and backend files.
+6. **CloudFront Invalidation:** Dispatches an invalidation for `/index.html` and `/` so global edge locations serve the updated release immediately.
+
+### 5. Production Auth0 Configuration
+
+When deploying the frontend to CloudFront:
+1. Copy the provisioned `frontend_url` output from Terraform (e.g. `https://d12345abcdef.cloudfront.net`).
+2. In your Auth0 Application Settings, add the CloudFront URL to:
+   - **Allowed Callback URLs:** `https://<cloudfront-domain>`
+   - **Allowed Logout URLs:** `https://<cloudfront-domain>`
+   - **Allowed Web Origins:** `https://<cloudfront-domain>`
+3. The frontend `main.tsx` dynamically uses `window.location.origin` for the Auth0 `redirect_uri`, requiring zero code changes between local development and CloudFront hosting.
+
+### 6. Least-Privilege IAM Security Model
 
 - **No Managed Admin Policies:** Custom inline policies are attached directly to execution roles.
 - **Strictly Scoped ARNs:** CloudWatch logging permissions (`logs:CreateLogStream`, `logs:PutLogEvents`) are locked down to the exact log group ARN. DynamoDB permissions are strictly bounded to the table ARN and index ARN (`${aws_dynamodb_table.alerts.arn}/index/GSI1`).
 - **Worker Isolation:** The Scheduled Worker Lambda is only granted `dynamodb:Query` on GSI1 and base table, and `dynamodb:GetItem`/`dynamodb:PutItem` for deduplication records. It cannot scan or wipe user tables.
 - **API Isolation:** The API Lambda has no permission to query GSI1 or modify system-wide configurations.
 
-### 4. Configuration Variables & Secrets
+### 7. Configuration Variables & Secrets
 
 Input variables are defined in `variables.tf`. For deployment, copy the example file:
 
@@ -300,8 +354,10 @@ Key variables configured in `terraform.tfvars`:
 - `gemini_api_key`: (Optional, `sensitive = true`) Google Gemini API key for AI Copilot. Defaults to `""` (copilot uses deterministic fallback).
 - `gemini_model`: Generative AI model name (default: `gemini-1.5-flash`).
 - `worker_schedule_expression`: EventBridge schedule rate/cron (default: `rate(1 hour)`).
+- `cloudfront_price_class`: CloudFront edge distribution price tier (default: `PriceClass_100`).
+- `frontend_html_cache_ttl`: Default cache TTL for index.html (default: `0`).
 
-### 5. Deployment & Lifecycle Commands
+### 8. Deployment & Lifecycle Commands
 
 Before planning or deploying, build the backend distribution artifacts:
 ```bash
@@ -324,30 +380,36 @@ terraform plan -var-file=environments/dev/terraform.tfvars -out=tfplan
 # 5. Apply the plan to provision resources
 terraform apply tfplan
 
-# 6. Retrieve outputs (API URL, table name, ARNs)
+# 6. Retrieve outputs (API URL, CloudFront URL, table name, ARNs)
 terraform output
+
+# 7. Deploy frontend to S3 and invalidate CloudFront
+cd ../../frontend
+npm run deploy
 ```
 
-### 6. Cleanup & Resource Teardown
+### 9. Cleanup & Resource Teardown
 
 To tear down all provisioned cloud resources cleanly:
 ```bash
 cd infra/terraform
 terraform destroy -var-file=environments/dev/terraform.tfvars
 ```
-This cleanly removes all Lambda functions, Function URLs, EventBridge rules, CloudWatch log groups, and DynamoDB tables.
+This cleanly removes all CloudFront distributions, S3 buckets, Lambda functions, Function URLs, EventBridge rules, CloudWatch log groups, and DynamoDB tables.
 
-### 7. Cost Estimation (AWS Free Tier Optimization)
+### 10. Cost Estimation (AWS Free Tier Optimization)
 
 Weatherly's serverless architecture is designed to operate within the **AWS Free Tier** and incur **$0 / month when idle**:
 
+- **Amazon CloudFront:** AWS perpetually provides 1 TB of data transfer out and 10,000,000 HTTP/HTTPS requests per month free.
+- **Amazon S3:** Standard storage includes 5 GB of standard storage, 20,000 GET requests, and 2,000 PUT requests per month during AWS free tier.
 - **DynamoDB:** `PAY_PER_REQUEST` (on-demand) billing incurs zero cost when not in use. AWS Free Tier includes 25 GB of storage, 25 WCU, and 25 RCU perpetually.
 - **AWS Lambda:** 1,000,000 free requests per month and 3,200,000 seconds of compute time per month perpetually.
 - **Lambda Function URLs:** Function URLs have **$0 additional charge** (unlike API Gateway HTTP/REST APIs which charge after free tier). You only pay for standard Lambda execution time and data transfer.
 - **Amazon EventBridge:** Scheduled rules (1 rule running every hour = ~720 invocations/month) are well within the perpetually free limit.
 - **Amazon CloudWatch Logs:** 5 GB of ingestion and 5 GB of storage are included free perpetually. Log groups have a 14-day TTL retention to ensure older logs are automatically expunged.
 
-### 8. State Management Strategy & Remote Migration
+### 11. State Management Strategy & Remote Migration
 
 By default, Terraform is configured with a **local backend** (`terraform.tfstate` in `infra/terraform/`), making it frictionless to test and validate without requiring prior AWS bootstrapping.
 

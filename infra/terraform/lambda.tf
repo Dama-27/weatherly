@@ -50,11 +50,16 @@ resource "aws_lambda_function_url" "api_url" {
 
   cors {
     allow_credentials = true
-    allow_origins     = [var.frontend_origin, "http://localhost:5173", "http://127.0.0.1:5173"]
-    allow_methods     = ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
-    allow_headers     = ["content-type", "authorization", "x-requested-with", "accept"]
-    expose_headers    = ["content-range", "x-content-range"]
-    max_age           = 86400
+    allow_origins = compact(distinct([
+      var.frontend_origin,
+      "https://${aws_cloudfront_distribution.frontend.domain_name}",
+      "http://localhost:5173",
+      "http://127.0.0.1:5173"
+    ]))
+    allow_methods  = ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+    allow_headers  = ["content-type", "authorization", "x-requested-with", "accept"]
+    expose_headers = ["content-range", "x-content-range"]
+    max_age        = 86400
   }
 }
 
