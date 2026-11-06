@@ -11,6 +11,12 @@ const frontendOrigin = process.env.FRONTEND_ORIGIN ?? 'http://localhost:5173';
 const geminiApiKey = process.env.GEMINI_API_KEY ?? '';
 const geminiModel = process.env.GEMINI_MODEL ?? 'gemini-1.5-flash';
 const awsRegion = process.env.AWS_REGION ?? process.env.AWS_DEFAULT_REGION ?? 'us-east-1';
+const dynamoDbTableName = process.env.DYNAMODB_TABLE_NAME ?? 'weatherly-alerts';
+const dynamoDbGsiName = process.env.DYNAMODB_GSI_NAME ?? 'GSI1';
+const alertPersistence = (
+  process.env.ALERT_PERSISTENCE ??
+  (process.env.DYNAMODB_TABLE_NAME ? 'dynamodb' : 'memory')
+).toLowerCase();
 
 if (weatherProvider === 'openweathermap' && !openWeatherApiKey) {
   throw new Error('OPENWEATHER_API_KEY is not configured for OpenWeatherMap provider.');
@@ -34,4 +40,7 @@ export const env = {
   geminiApiKey,
   geminiModel,
   awsRegion,
+  dynamoDbTableName,
+  dynamoDbGsiName,
+  alertPersistence,
 };

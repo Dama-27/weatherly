@@ -326,3 +326,84 @@ export async function getWeatherData(accessToken?: string): Promise<WeatherResul
 
   return rawList.map((item, index) => normalizeWeatherItem(item, index));
 }
+
+/**
+ * Retrieves alerts for the authenticated user from the backend persistence layer.
+ */
+export async function fetchUserAlerts(accessToken: string): Promise<AlertRule[]> {
+  const response = await fetch(`${API_URL}/alerts`, {
+    headers: getAuthHeaders(accessToken),
+  });
+
+  if (!response.ok) {
+    const errorJson = await response.json().catch(() => null);
+    throw new Error(errorJson?.message || 'Failed to fetch user alerts');
+  }
+
+  const data = await response.json();
+  return Array.isArray(data?.alerts) ? data.alerts : [];
+}
+
+/**
+ * Creates a new alert rule in the backend persistence layer.
+ */
+export async function createUserAlert(
+  ruleData: Omit<AlertRule, 'id' | 'createdAt'>,
+  accessToken: string
+): Promise<AlertRule> {
+  const response = await fetch(`${API_URL}/alerts`, {
+    method: 'POST',
+    headers: {
+      ...getAuthHeaders(accessToken),
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(ruleData),
+  });
+
+  if (!response.ok) {
+    const errorJson = await response.json().catch(() => null);
+    throw new Error(errorJson?.message || 'Failed to create user alert');
+  }
+
+  return response.json();
+}
+
+/**
+ * Updates an alert rule in the backend persistence layer.
+ */
+export async function updateUserAlert(
+  id: string,
+  updates: Partial<AlertRule>,
+  accessToken: string
+): Promise<AlertRule> {
+  const response = await fetch(`${API_URL}/alerts/${id}`, {
+    method: 'PUT',
+    headers: {
+      ...getAuthHeaders(accessToken),
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(updates),
+  });
+
+  if (!response.ok) {
+    const errorJson = await response.json().catch(() => null);
+    throw new Error(errorJson?.message || 'Failed to update user alert');
+  }
+
+  return response.json();
+}
+
+/**
+ * Deletes an alert rule from the backend persistence layer.
+ */
+export async function deleteUserAlert(id: string, accessToken: string): Promise<void> {
+  const response = await fetch(`${API_URL}/alerts/${id}`, {
+    method: 'DELETE',
+    headers: getAuthHeaders(accessToken),
+  });
+
+  if (!response.ok) {
+    const errorJson = await response.json().catch(() => null);
+    throw new Error(errorJson?.message || 'Failed to delete user alert');
+  }
+}

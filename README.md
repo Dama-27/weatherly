@@ -80,6 +80,10 @@ Base URL: `http://localhost:3000`
 | `GET` | `/api/weather/recommendations?lat={lat}&lon={lon}&name={name}` | Returns outdoor activity suitability, clothing suggestions, daily advice, and best outdoor window | Optional |
 | `POST` | `/api/weather/alerts/evaluate` | Evaluates user-configured weather alert rules against current and forecast conditions | Optional |
 | `POST` | `/api/assistant/ask` | Answers natural-language weather queries using Google Gemini with deterministic fallback | Optional |
+| `GET` | `/api/alerts` | Lists all alert rules for the authenticated user | Yes (Bearer token) |
+| `POST` | `/api/alerts` | Creates a new alert rule for the authenticated user | Yes (Bearer token) |
+| `PUT` | `/api/alerts/:id` | Updates an alert rule (toggle enabled, threshold, location) | Yes (Bearer token) |
+| `DELETE` | `/api/alerts/:id` | Deletes an alert rule belonging to the authenticated user | Yes (Bearer token) |
 
 ### 2. Preserved Legacy & System Endpoints
 | Method | Endpoint | Description | Auth Required |
@@ -139,21 +143,50 @@ The Smart Recommendations engine (`/api/weather/recommendations`) translates met
 
 ---
 
-## Personalized Weather Alerts & Notifications (MVP)
+## Personalized Weather Alerts & AWS DynamoDB Persistence
 
-Weatherly allows users to configure personal weather condition alerts:
+Weatherly supports personalized weather condition alerts with dual-mode persistence (AWS DynamoDB Single-Table in cloud deployments and In-Memory storage with scoped browser fallback):
+
+### 1. Alert Types
 - **Temperature Thresholds:** Above or below a target value (°C).
 - **Rain Probability:** Exceeding a specified likelihood (%).
 - **UV Index:** Exceeding target exposure limit.
 - **Wind Speed:** Exceeding maximum comfort/safety speeds (km/h).
 - **Severe Weather Forecasts:** Thunderstorm activity (WMO 95, 96, 99) and heavy downpour/precipitation.
 
-### MVP Architecture & Storage:
-- **Rule Persistence:** Stored in browser `localStorage` scoped by authenticated Auth0 user ID (`weatherly_alerts_${userId}`) or guest fallback (`weatherly_alerts_guest`). No tokens or sensitive credentials are ever written.
-- **Evaluation Engine:** Backend service (`POST /api/weather/alerts/evaluate`) deterministically evaluates active rules against current conditions and 24-hour hourly forecast timelines.
-- **Deduplication:** At most one notification is triggered per rule and time window.
-- **Browser Notifications:** Utilizes the HTML5 Notifications API with explicit user opt-in (`default`, `granted`, `denied`, `unsupported`).
-- **Operational Limitation:** In this MVP, alerts and browser notifications are evaluated client-side when Weatherly is open and actively refreshing weather data. They do not constitute guaranteed real-time emergency civil warnings.
+### 2. DynamoDB Single-Table Schema Design
+- **Table Name:** Configurable via `DYNAMODB_TABLE_NAME` (default: `weatherly-alerts`).
+- **Primary Key Structure:**
+  - `PK` (String): Partition key (`USER#<userId>`)
+  - `SK` (String): Sort key (`ALERT#<alertId>` or `EVAL#<alertId>#<eventPeriod>`)
+- **Global Secondary Index (GSI1 - Sparse Index):**
+  - `GSI1PK` (String): `'ALERT#ENABLED'` (only populated when `enabled: true`)
+  - `GSI1SK` (String): `${locationKey}#${userId}#${alertId}`
+  *(Disabled alerts omit GSI keys, avoiding GSI storage overhead and eliminating full table scans)*
+
+#### Access Patterns Matrix:
+| Access Pattern | Target | Key Condition Expression | Purpose |
+|---|---|---|---|
+| **AP1: Query all alerts for a user** | Base Table | `PK = 'USER#<userId>' AND begins_with(SK, 'ALERT#')` | `GET /api/alerts` |
+| **AP2: Get single alert by ID** | Base Table | `PK = 'USER#<userId>' AND SK = 'ALERT#<alertId>'` | User alert lookup & ownership check |
+| **AP3: Create/Update alert** | Base Table | `PK = 'USER#<userId>' AND SK = 'ALERT#<alertId>'` | `POST /api/alerts`, `PUT /api/alerts/:id` |
+| **AP4: Delete alert** | Base Table | `PK = 'USER#<userId>' AND SK = 'ALERT#<alertId>'` | `DELETE /api/alerts/:id` |
+| **AP5: Query enabled alerts across all users** | GSI1 | `GSI1PK = 'ALERT#ENABLED'` | Scheduled Alert Worker bulk evaluation |
+| **AP6: Check previously evaluated event** | Base Table | `PK = 'USER#<userId>' AND SK = 'EVAL#<alertId>#<eventPeriod>'` | Duplicate suppression check |
+| **AP7: Record triggered evaluation event** | Base Table | `PK = 'USER#<userId>' AND SK = 'EVAL#<alertId>#<eventPeriod>'` | Audit log with 7-day TTL auto-expiry |
+
+### 3. Scheduled Alert Worker (`backend/src/workers/scheduled-alerts.worker.ts`)
+- Standalone AWS Lambda handler invoked periodically (e.g. every 15 minutes via Amazon EventBridge).
+- Queries active enabled rules via GSI1 without table scans.
+- Groups alerts by geographical coordinates (`latitude:longitude`) so each city's forecast is requested from Open-Meteo only once per run.
+- Reuses the deterministic Day 2 evaluation engine (`evaluateAlertRules`).
+- Enforces duplicate suppression: Checks `hasEvaluationRecord()` before recording new triggers.
+- Partial failure isolation: Network or provider timeouts on one location do not abort evaluation of other locations.
+
+### 4. Client-Side Resilience & Fallback
+- Authenticated users automatically synchronize with backend DynamoDB persistence through verified JWT claims (`req.auth.sub`).
+- If backend persistence is unreachable or when unauthenticated, Weatherly gracefully falls back to scoped `localStorage` (`weatherly_alerts_${userId}`).
+- Client-side HTML5 desktop notifications operate on active browser sessions with user consent.
 
 ---
 
@@ -235,8 +268,8 @@ The frontend Vite server runs on `http://localhost:5173`. API requests (`/api/*`
 Execute the Vitest suite and compile TypeScript:
 ```bash
 cd backend
-npm test        # Runs all 20 test suites (188 unit & integration tests)
-npm run build   # Typechecks and builds backend (server.js & lambda.js) with tsc
+npm test        # Runs all 23 test suites (221 unit & integration tests)
+npm run build   # Typechecks and builds backend (server.js, lambda.js, workers) with tsc
 ```
 
 ### Frontend
@@ -244,7 +277,7 @@ Execute linting, unit tests, and production build:
 ```bash
 cd frontend
 npm run lint    # Runs oxlint static analysis (0 errors, 0 warnings across 30 files)
-npm test        # Runs unit tests via Node native test runner (16 suites, 33 tests)
+npm test        # Runs unit tests via Node native test runner (17 suites, 37 tests)
 npm run build   # Typechecks (tsc -b) and bundles production client with Vite
 ```
 

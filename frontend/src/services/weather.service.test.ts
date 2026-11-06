@@ -2,13 +2,17 @@ import { afterEach, describe, it } from 'node:test';
 import assert from 'node:assert';
 import {
   askWeatherAssistant,
+  createUserAlert,
+  deleteUserAlert,
   evaluateWeatherAlerts,
+  fetchUserAlerts,
   getCurrentWeather,
   getDailyForecast,
   getHourlyForecast,
   getWeatherData,
   getWeatherRecommendations,
   searchLocations,
+  updateUserAlert,
 } from './weather.service.ts';
 
 describe('Frontend Weather Service', () => {
@@ -426,6 +430,121 @@ describe('Frontend Weather Service', () => {
           message: 'Assistant service timed out',
         }
       );
+    });
+  });
+
+  describe('User Alert Persistence APIs', () => {
+    it('fetches user alerts from /api/alerts with Authorization header', async () => {
+      let requestedUrl = '';
+      let requestedHeaders: any = null;
+
+      globalThis.fetch = (async (url: string, init?: RequestInit) => {
+        requestedUrl = url;
+        requestedHeaders = init?.headers;
+        return {
+          ok: true,
+          json: async () => ({
+            alerts: [
+              {
+                id: 'alert-1',
+                type: 'temp_above',
+                threshold: 30,
+                enabled: true,
+                location: { latitude: 6.9, longitude: 79.8, name: 'Colombo' },
+                createdAt: '2026-11-06T10:00:00Z',
+              },
+            ],
+          }),
+        } as unknown as Response;
+      }) as any;
+
+      const alerts = await fetchUserAlerts('token-xyz');
+      assert.ok(requestedUrl.includes('/api/alerts'));
+      assert.strictEqual(requestedHeaders?.Authorization, 'Bearer token-xyz');
+      assert.strictEqual(alerts.length, 1);
+      assert.strictEqual(alerts[0].id, 'alert-1');
+    });
+
+    it('creates a new alert via POST /api/alerts', async () => {
+      let requestedUrl = '';
+      let requestedMethod = '';
+      let requestedBody: any = null;
+
+      globalThis.fetch = (async (url: string, init?: RequestInit) => {
+        requestedUrl = url;
+        requestedMethod = init?.method || 'GET';
+        requestedBody = init?.body ? JSON.parse(init.body as string) : null;
+        return {
+          ok: true,
+          json: async () => ({
+            id: 'created-id-999',
+            type: 'rain_prob_above',
+            threshold: 80,
+            enabled: true,
+            location: { latitude: 7.21, longitude: 79.84, name: 'Negombo' },
+            createdAt: '2026-11-06T12:00:00Z',
+          }),
+        } as unknown as Response;
+      }) as any;
+
+      const created = await createUserAlert(
+        {
+          type: 'rain_prob_above',
+          threshold: 80,
+          enabled: true,
+          location: { latitude: 7.21, longitude: 79.84, name: 'Negombo' },
+        },
+        'token-xyz'
+      );
+
+      assert.ok(requestedUrl.includes('/api/alerts'));
+      assert.strictEqual(requestedMethod, 'POST');
+      assert.strictEqual(requestedBody.type, 'rain_prob_above');
+      assert.strictEqual(created.id, 'created-id-999');
+    });
+
+    it('updates an alert via PUT /api/alerts/:id', async () => {
+      let requestedUrl = '';
+      let requestedMethod = '';
+      let requestedBody: any = null;
+
+      globalThis.fetch = (async (url: string, init?: RequestInit) => {
+        requestedUrl = url;
+        requestedMethod = init?.method || 'GET';
+        requestedBody = init?.body ? JSON.parse(init.body as string) : null;
+        return {
+          ok: true,
+          json: async () => ({
+            id: 'alert-1',
+            enabled: false,
+            threshold: 32,
+          }),
+        } as unknown as Response;
+      }) as any;
+
+      const updated = await updateUserAlert('alert-1', { enabled: false, threshold: 32 }, 'token-xyz');
+      assert.ok(requestedUrl.includes('/api/alerts/alert-1'));
+      assert.strictEqual(requestedMethod, 'PUT');
+      assert.strictEqual(requestedBody.enabled, false);
+      assert.strictEqual(updated.enabled, false);
+    });
+
+    it('deletes an alert via DELETE /api/alerts/:id', async () => {
+      let requestedUrl = '';
+      let requestedMethod = '';
+
+      globalThis.fetch = (async (url: string, init?: RequestInit) => {
+        requestedUrl = url;
+        requestedMethod = init?.method || 'GET';
+        return {
+          ok: true,
+          json: async () => ({ success: true }),
+        } as unknown as Response;
+      }) as any;
+
+      await deleteUserAlert('alert-to-delete', 'token-xyz');
+      assert.ok(requestedUrl.includes('/api/alerts/alert-to-delete'));
+      assert.strictEqual(requestedMethod, 'DELETE');
     });
   });
 });

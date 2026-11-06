@@ -5,6 +5,7 @@ import weatherRouter from './routes/weather.routes';
 import locationRouter from './routes/location.routes';
 import cacheRouter from './routes/cache.router';
 import assistantRouter from './routes/assistant.routes';
+import alertRouter from './routes/alert.routes';
 
 export interface AppOptions {
   corsOrigin?: string | string[] | boolean;
@@ -90,6 +91,7 @@ export function createApp(options?: AppOptions): Application {
   app.use('/api', locationRouter);
   app.use('/api', cacheRouter);
   app.use('/api', assistantRouter);
+  app.use('/api', alertRouter);
 
   // Hook for testing custom route behavior before 404/error middleware
   if (options?.configureBeforeErrorHandlers) {

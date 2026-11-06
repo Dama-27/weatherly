@@ -13,12 +13,16 @@ import WeatherAlertsSection from './components/WeatherAlertsSection';
 import WeatherCopilotSection from './components/WeatherCopilotSection';
 import WeatherTable from './components/WeatherTable';
 import {
+  createUserAlert,
+  deleteUserAlert,
   evaluateWeatherAlerts,
+  fetchUserAlerts,
   getCurrentWeather,
   getDailyForecast,
   getHourlyForecast,
   getWeatherData,
   getWeatherRecommendations,
+  updateUserAlert,
 } from './services/weather.service';
 import {
   createAlertRule,
@@ -85,31 +89,89 @@ export default function App() {
   const [weatherError, setWeatherError] = useState<string | null>(null);
   const [reloadTrigger, setReloadTrigger] = useState(0);
 
-  // Weather alerts state (scoped to user.sub)
+  // Weather alerts state (persisted via Backend / DynamoDB with local fallback)
   const [alerts, setAlerts] = useState<AlertRule[]>(() => getStoredAlerts(user?.sub));
   const [triggeredAlerts, setTriggeredAlerts] = useState<TriggeredAlert[]>([]);
   const [alertsDisclaimer, setAlertsDisclaimer] = useState<string | undefined>();
   const [alertsEvaluating, setAlertsEvaluating] = useState(false);
 
-  // Sync stored alerts when user ID changes (e.g. login/logout)
-  const [prevUserSub, setPrevUserSub] = useState(user?.sub);
-  if (user?.sub !== prevUserSub) {
-    setPrevUserSub(user?.sub);
-    setAlerts(getStoredAlerts(user?.sub));
-  }
+  // Synchronize alerts from backend with automatic local storage fallback
+  useEffect(() => {
+    let isMounted = true;
+    async function loadAlerts() {
+      if (isAuthenticated) {
+        try {
+          const token = await getAccessTokenSilently();
+          if (token) {
+            const remoteAlerts = await fetchUserAlerts(token);
+            if (isMounted) {
+              setAlerts(remoteAlerts);
+              return;
+            }
+          }
+        } catch (err) {
+          console.warn('Backend alert persistence unavailable, falling back to local storage:', err);
+        }
+      }
+      if (isMounted) {
+        setAlerts(getStoredAlerts(user?.sub));
+      }
+    }
 
-  // Alert management handlers
-  const handleCreateAlert = (ruleData: Omit<AlertRule, 'id' | 'createdAt'>) => {
+    loadAlerts();
+    return () => {
+      isMounted = false;
+    };
+  }, [isAuthenticated, user?.sub, getAccessTokenSilently]);
+
+  // Alert management handlers (Backend API with local fallback)
+  const handleCreateAlert = async (ruleData: Omit<AlertRule, 'id' | 'createdAt'>) => {
+    if (isAuthenticated) {
+      try {
+        const token = await getAccessTokenSilently();
+        if (token) {
+          const created = await createUserAlert(ruleData, token);
+          setAlerts((prev) => [created, ...prev]);
+          return;
+        }
+      } catch (err) {
+        console.warn('Failed to save alert to backend, saving locally:', err);
+      }
+    }
     createAlertRule(ruleData, user?.sub);
     setAlerts(getStoredAlerts(user?.sub));
   };
 
-  const handleToggleAlert = (id: string, enabled: boolean) => {
+  const handleToggleAlert = async (id: string, enabled: boolean) => {
+    if (isAuthenticated) {
+      try {
+        const token = await getAccessTokenSilently();
+        if (token) {
+          const updated = await updateUserAlert(id, { enabled }, token);
+          setAlerts((prev) => prev.map((a) => (a.id === id ? updated : a)));
+          return;
+        }
+      } catch (err) {
+        console.warn('Failed to update alert on backend, updating locally:', err);
+      }
+    }
     toggleAlertRule(id, enabled, user?.sub);
     setAlerts(getStoredAlerts(user?.sub));
   };
 
-  const handleDeleteAlert = (id: string) => {
+  const handleDeleteAlert = async (id: string) => {
+    if (isAuthenticated) {
+      try {
+        const token = await getAccessTokenSilently();
+        if (token) {
+          await deleteUserAlert(id, token);
+          setAlerts((prev) => prev.filter((a) => a.id !== id));
+          return;
+        }
+      } catch (err) {
+        console.warn('Failed to delete alert on backend, deleting locally:', err);
+      }
+    }
     deleteAlertRule(id, user?.sub);
     setAlerts(getStoredAlerts(user?.sub));
   };
