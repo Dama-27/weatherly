@@ -54,9 +54,10 @@ Weatherly adopts a clean layered architecture designed for provider independence
   - Styling: Pure CSS with CSS custom properties, responsive grid/flexbox, and dynamic gradients
 - **Backend:**
   - Node.js (v24 LTS / v20+), Express 5, TypeScript
-  - Security & Auth: `express-oauth2-jwt-bearer`
+  - Serverless Adapter: `@codegenie/serverless-express` (AWS Lambda & API Gateway v1/v2 handler)
+  - CORS & Security: `cors`, `express-oauth2-jwt-bearer` (Auth0 RS256 JWT validation)
   - Caching: `node-cache` (TTL-based in-memory cache)
-  - Testing: Vitest
+  - Testing: Vitest, Supertest
 - **External Providers & APIs:**
   - **Open-Meteo API:** Hourly, daily, and current weather forecasts
   - **Open-Meteo Geocoding API:** Location search and coordinate resolution
@@ -234,8 +235,8 @@ The frontend Vite server runs on `http://localhost:5173`. API requests (`/api/*`
 Execute the Vitest suite and compile TypeScript:
 ```bash
 cd backend
-npm test        # Runs all 18 test suites (167 unit & integration tests)
-npm run build   # Typechecks and builds backend with tsc
+npm test        # Runs all 20 test suites (188 unit & integration tests)
+npm run build   # Typechecks and builds backend (server.js & lambda.js) with tsc
 ```
 
 ### Frontend
@@ -257,10 +258,10 @@ Weather forecast data and geocoding services are provided by **[Open-Meteo](http
 
 ## Known Limitations & Planned Enhancements
 
-1. **In-Memory Caching:**
-   - Caching is managed in-process using `node-cache`. Cache entries do not persist across process restarts. Shared Redis caching is recommended for multi-instance production environments.
+1. **Lambda In-Memory Cache Life-Cycle:**
+   - Caching currently operates in-process using `node-cache` per Lambda warm container instance. Across horizontal Lambda scalings or cold starts, cache entries do not persist. Centralized DynamoDB and Redis caching are slated for upcoming Day 3 milestones.
 2. **Cloud Infrastructure:**
-   - AWS infrastructure (ECS/Lambda, S3/CloudFront, API Gateway, CDK/Terraform) has not yet been provisioned and is scheduled for subsequent deployment milestones.
+   - The backend is now fully Lambda-ready with `@codegenie/serverless-express` (`dist/lambda.handler`). Infrastructure as code (Terraform/CDK) and DynamoDB tables will be provisioned in subsequent Day 3 milestones.
 3. **Offline / Service Worker Support:**
    - Client requires an active internet connection for real-time forecast and search updates. Progressive Web App (PWA) offline caching is slated for future enhancement.
 4. **Geocoding Disambiguation:**
