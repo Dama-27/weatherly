@@ -32,3 +32,9 @@ enable_point_in_time_recovery = true
 # frontend_bucket_name    = "weatherly-dev-frontend-123456789012" # Optional: defaults to weatherly-dev-frontend-<account-id>
 cloudfront_price_class  = "PriceClass_100"                      # PriceClass_100 (US/Europe) minimizes cost
 frontend_html_cache_ttl = 0                                     # 0 ensures index.html is revalidated immediately on new deploys
+
+# GitHub Actions OIDC CI/CD
+create_github_oidc_provider = true
+github_repository           = "Dama-27/weatherly"
+github_branch               = "main"
+github_environment          = "production"

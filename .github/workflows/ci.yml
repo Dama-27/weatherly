@@ -1,0 +1,115 @@
+name: Continuous Integration
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+# Prevent overlapping CI runs on the same branch or PR
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Backend Quality Gate
+  # ---------------------------------------------------------------------------
+  backend-ci:
+    name: Backend Tests & Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 20.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.x
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: npm ci
+
+      - name: Run backend tests
+        working-directory: backend
+        run: npm test
+
+      - name: Compile backend TypeScript
+        working-directory: backend
+        run: npm run build
+
+  # ---------------------------------------------------------------------------
+  # Frontend Quality Gate
+  # ---------------------------------------------------------------------------
+  frontend-ci:
+    name: Frontend Lint, Tests & Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 20.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.x
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Lint frontend codebase
+        working-directory: frontend
+        run: npm run lint
+
+      - name: Run frontend tests
+        working-directory: frontend
+        run: npm test
+
+      - name: Build frontend production bundle
+        working-directory: frontend
+        env:
+          VITE_AUTH0_DOMAIN: dummy-tenant.us.auth0.com
+          VITE_AUTH0_CLIENT_ID: dummy-client-id
+          VITE_AUTH0_AUDIENCE: https://weather-analytics-api
+          VITE_API_URL: /api
+        run: npm run build
+
+  # ---------------------------------------------------------------------------
+  # Infrastructure Quality Gate
+  # ---------------------------------------------------------------------------
+  terraform-ci:
+    name: Terraform Format & Validate
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.10.5
+
+      - name: Check Terraform formatting
+        working-directory: infra/terraform
+        run: terraform fmt -check
+
+      - name: Initialize Terraform (syntax/module validation only)
+        working-directory: infra/terraform
+        run: terraform init -backend=false
+
+      - name: Validate Terraform configuration
+        working-directory: infra/terraform
+        run: terraform validate

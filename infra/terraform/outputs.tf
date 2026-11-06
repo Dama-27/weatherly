@@ -86,3 +86,17 @@ output "frontend_url" {
   description = "Public HTTPS entrypoint URL for the Weatherly frontend application"
   value       = "https://${aws_cloudfront_distribution.frontend.domain_name}"
 }
+
+# -----------------------------------------------------------------------------
+# GitHub Actions OIDC CI/CD
+# -----------------------------------------------------------------------------
+
+output "github_oidc_role_arn" {
+  description = "ARN of the IAM role assumed by GitHub Actions via OIDC"
+  value       = aws_iam_role.github_actions_deploy.arn
+}
+
+output "github_oidc_provider_arn" {
+  description = "ARN of the GitHub OIDC provider"
+  value       = local.github_oidc_provider_arn
+}

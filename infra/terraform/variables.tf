@@ -134,3 +134,31 @@ variable "frontend_html_cache_ttl" {
   type        = number
   default     = 0
 }
+
+# -----------------------------------------------------------------------------
+# GitHub Actions OIDC & CI/CD Deployment
+# -----------------------------------------------------------------------------
+
+variable "create_github_oidc_provider" {
+  description = "Whether to create the GitHub Actions OIDC identity provider in AWS (set to false if already created in the AWS account)"
+  type        = bool
+  default     = true
+}
+
+variable "github_repository" {
+  description = "GitHub repository path in owner/repo format authorized to assume the deployment role (e.g. Dama-27/weatherly)"
+  type        = string
+  default     = "Dama-27/weatherly"
+}
+
+variable "github_branch" {
+  description = "GitHub repository branch authorized to execute production deployments"
+  type        = string
+  default     = "main"
+}
+
+variable "github_environment" {
+  description = "GitHub Actions environment name for deployment protection rules"
+  type        = string
+  default     = "production"
+}

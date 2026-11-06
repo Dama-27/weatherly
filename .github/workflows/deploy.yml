@@ -1,0 +1,271 @@
+name: Production Deployment
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target GitHub deployment environment'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+          - production
+          - dev
+
+# Prevent concurrent deployments to avoid Terraform state locking collisions
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  id-token: write  # Required for AWS OIDC token exchange
+  contents: read   # Required to check out source code
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # 1. CI Validation Gate
+  # ---------------------------------------------------------------------------
+  ci-gate:
+    name: Verify Quality Gates
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 20.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.x
+          cache: npm
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend/package-lock.json
+
+      - name: Backend Test & Build
+        run: |
+          cd backend
+          npm ci
+          npm test
+          npm run build
+
+      - name: Frontend Lint, Test & Build
+        env:
+          VITE_AUTH0_DOMAIN: dummy-tenant.us.auth0.com
+          VITE_AUTH0_CLIENT_ID: dummy-client-id
+          VITE_AUTH0_AUDIENCE: https://weather-analytics-api
+          VITE_API_URL: /api
+        run: |
+          cd frontend
+          npm ci
+          npm run lint
+          npm test
+          npm run build
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.10.5
+
+      - name: Terraform Format & Syntax Check
+        run: |
+          cd infra/terraform
+          terraform fmt -check
+          terraform init -backend=false
+          terraform validate
+
+  # ---------------------------------------------------------------------------
+  # 2. Package Lambda Artifacts with Production Dependencies
+  # ---------------------------------------------------------------------------
+  package-lambda:
+    name: Package Lambda Artifacts
+    needs: ci-gate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 20.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.x
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Package Backend for Lambda
+        run: |
+          cd backend
+          npm ci
+          npm run package
+
+      - name: Archive Lambda Staging Directory
+        uses: actions/upload-artifact@v4
+        with:
+          name: lambda-package
+          path: backend/.lambda-package
+          retention-days: 1
+          if-no-files-found: error
+
+  # ---------------------------------------------------------------------------
+  # 3. Generate Terraform Plan
+  # ---------------------------------------------------------------------------
+  terraform-plan:
+    name: Terraform Plan
+    needs: [ci-gate, package-lambda]
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || 'production' }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Download Staged Lambda Package
+        uses: actions/download-artifact@v4
+        with:
+          name: lambda-package
+          path: backend/.lambda-package
+
+      - name: Configure AWS Credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_OIDC_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
+          audience: sts.amazonaws.com
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.10.5
+
+      - name: Initialize Terraform
+        working-directory: infra/terraform
+        run: terraform init
+
+      - name: Generate Speculative Plan
+        working-directory: infra/terraform
+        env:
+          TF_VAR_environment: ${{ github.event.inputs.environment || 'production' }}
+          TF_VAR_auth0_domain: ${{ secrets.AUTH0_DOMAIN || vars.AUTH0_DOMAIN }}
+          TF_VAR_auth0_audience: ${{ secrets.AUTH0_AUDIENCE || vars.AUTH0_AUDIENCE }}
+          TF_VAR_gemini_api_key: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          terraform plan \
+            -var="environment=${TF_VAR_environment}" \
+            -var="auth0_domain=${TF_VAR_auth0_domain}" \
+            -var="auth0_audience=${TF_VAR_auth0_audience}" \
+            -var="gemini_api_key=${TF_VAR_gemini_api_key}" \
+            -out=tfplan
+
+      - name: Upload Terraform Execution Plan
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfplan
+          path: infra/terraform/tfplan
+          retention-days: 1
+
+  # ---------------------------------------------------------------------------
+  # 4. Apply Infrastructure Changes (Protected Environment)
+  # ---------------------------------------------------------------------------
+  terraform-apply:
+    name: Apply Infrastructure Changes
+    needs: [terraform-plan, package-lambda]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    environment: ${{ github.event.inputs.environment || 'production' }}
+    outputs:
+      api_endpoint_url: ${{ steps.outputs.outputs.api_endpoint_url }}
+      frontend_s3_bucket_name: ${{ steps.outputs.outputs.frontend_s3_bucket_name }}
+      frontend_cloudfront_distribution_id: ${{ steps.outputs.outputs.frontend_cloudfront_distribution_id }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Download Staged Lambda Package
+        uses: actions/download-artifact@v4
+        with:
+          name: lambda-package
+          path: backend/.lambda-package
+
+      - name: Download Terraform Plan
+        uses: actions/download-artifact@v4
+        with:
+          name: tfplan
+          path: infra/terraform
+
+      - name: Configure AWS Credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_OIDC_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
+          audience: sts.amazonaws.com
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.10.5
+
+      - name: Initialize Terraform
+        working-directory: infra/terraform
+        run: terraform init
+
+      - name: Apply Provisioning Plan
+        working-directory: infra/terraform
+        run: terraform apply -auto-approve tfplan
+
+      - name: Capture Terraform Outputs
+        id: outputs
+        working-directory: infra/terraform
+        run: |
+          API_URL=$(terraform output -raw api_endpoint_url)
+          BUCKET=$(terraform output -raw frontend_s3_bucket_name)
+          DIST_ID=$(terraform output -raw frontend_cloudfront_distribution_id)
+          echo "api_endpoint_url=${API_URL}" >> "$GITHUB_OUTPUT"
+          echo "frontend_s3_bucket_name=${BUCKET}" >> "$GITHUB_OUTPUT"
+          echo "frontend_cloudfront_distribution_id=${DIST_ID}" >> "$GITHUB_OUTPUT"
+
+  # ---------------------------------------------------------------------------
+  # 5. Build and Deploy Frontend SPA
+  # ---------------------------------------------------------------------------
+  deploy-frontend:
+    name: Build & Deploy Frontend
+    needs: terraform-apply
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    environment: ${{ github.event.inputs.environment || 'production' }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 20.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.x
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Configure AWS Credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_OIDC_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
+          audience: sts.amazonaws.com
+
+      - name: Install Frontend Dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build Frontend with Production Environment
+        working-directory: frontend
+        env:
+          VITE_API_URL: ${{ needs.terraform-apply.outputs.api_endpoint_url }}
+          VITE_AUTH0_DOMAIN: ${{ secrets.AUTH0_DOMAIN || vars.AUTH0_DOMAIN }}
+          VITE_AUTH0_CLIENT_ID: ${{ secrets.AUTH0_CLIENT_ID || vars.AUTH0_CLIENT_ID }}
+          VITE_AUTH0_AUDIENCE: ${{ secrets.AUTH0_AUDIENCE || vars.AUTH0_AUDIENCE }}
+        run: npm run build
+
+      - name: Sync Frontend Assets & Invalidate CloudFront
+        run: |
+          node scripts/deploy-frontend.mjs \
+            --bucket "${{ needs.terraform-apply.outputs.frontend_s3_bucket_name }}" \
+            --distribution-id "${{ needs.terraform-apply.outputs.frontend_cloudfront_distribution_id }}"

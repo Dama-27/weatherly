@@ -431,6 +431,118 @@ Run `terraform init -migrate-state` to migrate existing local state into S3.
 
 ---
 
+## GitHub Actions CI/CD with AWS OIDC
+
+Weatherly features automated, secure CI/CD pipelines powered by GitHub Actions and AWS OpenID Connect (OIDC). Long-lived AWS access keys are **never** stored in GitHub secrets; instead, GitHub Actions assumes temporary, scoped AWS IAM credentials via OIDC web identity tokens.
+
+```text
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│                               GitHub Actions CI/CD Pipeline                            │
+├────────────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                        │
+│   Pull Request / Commit Push (main)                                                    │
+│       │                                                                                │
+│       ▼                                                                                │
+│   ┌────────────────────────────────────────────────────────────────────────────────┐   │
+│   │ CI Workflow (.github/workflows/ci.yml)                                         │   │
+│   │ ├─ Backend: npm ci ➔ npm test (221 tests) ➔ npm run build                      │   │
+│   │ ├─ Frontend: npm ci ➔ oxlint (0 errors) ➔ npm test (41 tests) ➔ vite build    │   │
+│   │ └─ Terraform: terraform fmt -check ➔ terraform validate                        │   │
+│   └───────────────────────────────────────┬────────────────────────────────────────┘   │
+│                                           │ CI Passed & Merged to main                 │
+│                                           ▼                                            │
+│   ┌────────────────────────────────────────────────────────────────────────────────┐   │
+│   │ Deployment Workflow (.github/workflows/deploy.yml)                             │   │
+│   │ 1. Package Lambda: Staged backend with production node_modules                 │   │
+│   │ 2. AWS OIDC Authentication: Assume role via token.actions.githubusercontent.com│   │
+│   │ 3. Terraform Plan: Speculative plan artifact review                            │   │
+│   │ 4. Environment Gate: GitHub Environment 'production' (manual approval)         │   │
+│   │ 5. Terraform Apply: Provisions/updates Lambda, DynamoDB, S3, and CloudFront    │   │
+│   │ 6. Frontend Build: Compiles React SPA with dynamic API Lambda URL              │   │
+│   │ 7. S3 Sync & Invalidate: Hashed assets (1-yr cache), HTML (revalidate)         │   │
+│   └────────────────────────────────────────────────────────────────────────────────┘   │
+└────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+### 1. Workflows Summary
+
+| Workflow | File | Triggers | Responsibilities |
+|---|---|---|---|
+| **Continuous Integration** | `.github/workflows/ci.yml` | `pull_request` (main), `push` (main) | Parallel verification: Backend tests/build, Frontend lint/tests/build, Terraform format/syntax validation. |
+| **Production Deployment** | `.github/workflows/deploy.yml` | `push` (main), `workflow_dispatch` | Controlled release: Package Lambda, OIDC auth, Terraform plan/apply with environment approval, S3 sync, CloudFront invalidation. |
+
+### 2. AWS Authentication via GitHub OIDC
+
+The deployment pipeline uses AWS OIDC federation, eliminating static credential management:
+- **OIDC Provider:** `token.actions.githubusercontent.com` (managed in `infra/terraform/oidc.tf`).
+- **Strict Trust Boundary:** The role assumption trust policy strictly enforces both the audience and exact repository:
+  ```json
+  {
+    "Effect": "Allow",
+    "Action": "sts:AssumeRoleWithWebIdentity",
+    "Principal": { "Federated": "arn:aws:iam::<account>:oidc-provider/token.actions.githubusercontent.com" },
+    "Condition": {
+      "StringEquals": { "token.actions.githubusercontent.com:aud": "sts.amazonaws.com" },
+      "StringLike": {
+        "token.actions.githubusercontent.com:sub": [
+          "repo:Dama-27/weatherly:ref:refs/heads/main",
+          "repo:Dama-27/weatherly:environment:production"
+        ]
+      }
+    }
+  }
+  ```
+- **Scoped Deployment Permissions:** The IAM role (`weatherly-dev-github-actions-deploy-role`) is restricted strictly to Weatherly resource prefixes (`weatherly-*`), including S3, CloudFront invalidations, Lambda functions, DynamoDB tables, and CloudWatch log groups.
+
+### 3. GitHub Repository Configuration Checklist
+
+To activate automated deployment in your repository:
+
+1. **Initial Terraform Provisioning:**
+   Run Terraform locally once to provision the OIDC provider and deployment role:
+   ```bash
+   cd infra/terraform
+   terraform plan -var-file=environments/dev/terraform.tfvars
+   terraform apply
+   ```
+   Note the output `github_oidc_role_arn`.
+
+2. **Configure GitHub Environment:**
+   - In GitHub, navigate to **Settings** ➔ **Environments** ➔ **New environment**.
+   - Name: `production`.
+   - Under **Deployment protection rules**, enable **Required reviewers** to require approval before infrastructure changes are applied.
+
+3. **Configure GitHub Repository Secrets & Variables:**
+   Navigate to **Settings** ➔ **Secrets and variables** ➔ **Actions**:
+   - **Secrets:**
+     - `AWS_OIDC_ROLE_ARN`: Output from Terraform `github_oidc_role_arn` (e.g. `arn:aws:iam::123456789012:role/weatherly-dev-github-actions-deploy-role`).
+     - `AUTH0_DOMAIN`: Your Auth0 domain (e.g. `dev-tenant.us.auth0.com`).
+     - `AUTH0_CLIENT_ID`: Your Auth0 Single-Page App client ID.
+     - `AUTH0_AUDIENCE`: Your Auth0 API audience identifier (`https://weather-analytics-api`).
+     - `GEMINI_API_KEY`: (Optional) Google Gemini API key for Copilot.
+   - **Variables:**
+     - `AWS_REGION`: Target AWS region (default: `us-east-1`).
+
+### 4. Lambda Packaging & Artifact Integrity
+
+- **Reproducible Production Packaging:** Executed via `scripts/package-lambda.mjs` (`npm run package` in `backend/`).
+- Staged into `backend/.lambda-package/` containing:
+  - Compiled JavaScript (`dist/lambda.js`, `dist/workers/scheduled-alerts.worker.js`).
+  - Production-only dependencies (`npm ci --omit=dev --no-audit`).
+- Terraform's `archive_file` data source packages this directory dynamically, generating an exact SHA-256 hash to trigger Lambda updates only when code or dependencies change.
+
+### 5. Troubleshooting & Diagnostics
+
+- **OIDC Error `Not authorized to perform sts:AssumeRoleWithWebIdentity`:**
+  - Verify that `github_repository` in `terraform.tfvars` matches your exact GitHub repository path (case-sensitive, e.g. `Dama-27/weatherly`).
+  - Verify that the workflow branch is `refs/heads/main` or running in the `production` environment.
+- **Terraform Plan Drift / Missing Variables:**
+  - Ensure all required secrets (`AUTH0_DOMAIN`, `AUTH0_AUDIENCE`) are populated in GitHub repository secrets.
+- **Frontend S3 Access Denied (403):**
+  - Verify that CloudFront OAC is attached and the S3 bucket policy references the exact CloudFront distribution ARN.
+
+---
+
 ## Environment Configuration
 
 ### Backend (`backend/.env`)
