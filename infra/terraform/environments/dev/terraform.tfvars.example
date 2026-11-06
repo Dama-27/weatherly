@@ -1,0 +1,29 @@
+# Example Terraform variables for dev environment
+# Copy this file to terraform.tfvars and populate with your environment settings
+
+aws_region      = "us-east-1"
+environment     = "dev"
+project_name    = "weatherly"
+frontend_origin = "http://localhost:5173"
+
+# Auth0 Configuration (Backend JWT verification)
+auth0_domain   = "your-tenant.us.auth0.com"
+auth0_audience = "https://weather-analytics-api"
+
+# Weather Provider (default: open-meteo)
+weather_provider = "open-meteo"
+
+# AI Copilot Configuration (Optional: leaves copilot in deterministic rule-based mode if empty)
+gemini_api_key = ""
+gemini_model   = "gemini-1.5-flash"
+
+# Lambda & Scheduling Settings
+api_lambda_memory          = 256
+api_lambda_timeout         = 15
+worker_lambda_memory       = 256
+worker_lambda_timeout      = 60
+worker_schedule_expression = "rate(1 hour)"
+
+# CloudWatch & Database
+log_retention_days            = 14
+enable_point_in_time_recovery = true

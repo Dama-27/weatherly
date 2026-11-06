@@ -190,6 +190,185 @@ Weatherly supports personalized weather condition alerts with dual-mode persiste
 
 ---
 
+## AWS Infrastructure as Code (Terraform)
+
+Weatherly includes a complete, production-ready Terraform configuration under `infra/terraform/` to provision the serverless architecture on AWS.
+
+```text
+┌────────────────────────────────────────────────────────────────────────┐
+│                        AWS Serverless Architecture                     │
+├────────────────────────────────────────────────────────────────────────┤
+│                                                                        │
+│   Web Browser Client (SPA)                                             │
+│       │                                                                │
+│       ▼ HTTPS Request (CORS protected)                                 │
+│   ┌──────────────────────────────────────────────────────────────┐     │
+│   │ Lambda Function URL (Auth: NONE, verified via Auth0 JWT)     │     │
+│   └──────────────────────────────┬───────────────────────────────┘     │
+│                                  │                                     │
+│                                  ▼                                     │
+│   ┌──────────────────────────────────────────────────────────────┐     │
+│   │ API Lambda: weatherly-dev-api                                │     │
+│   │ Handler: dist/lambda.handler (@codegenie/serverless-express) │     │
+│   └──────────────┬───────────────────────────────┬───────────────┘     │
+│                  │                               │                     │
+│                  │ Open-Meteo & Gemini APIs      │ Read/Write Alerts   │
+│                  ▼                               ▼                     │
+│   ┌──────────────────────────────┐ ┌─────────────────────────────────┐ │
+│   │ External APIs (Internet)     │ │ DynamoDB Table                  │ │
+│   │ - Open-Meteo Weather         │ │ weatherly-dev-alerts            │ │
+│   │ - Google Gemini (Optional)   │ │ - PK / SK Single-Table          │ │
+│   └──────────────────────────────┘ │ - GSI1: ALERT#ENABLED (Sparse)  │ │
+│                                    │ - KMS Encryption, PITR, TTL     │ │
+│   ┌──────────────────────────────┐ └─────────────────▲───────────────┘ │
+│   │ EventBridge Rule             │                   │                 │
+│   │ rate(1 hour)                 │                   │ Bulk Evaluate   │
+│   └──────────────┬───────────────┘                   │ & Suppress      │
+│                  │ Periodic Trigger                  │                 │
+│                  ▼                                   │                 │
+│   ┌──────────────────────────────────────────────────┴───────────┐     │
+│   │ Scheduled Worker Lambda: weatherly-dev-scheduled-worker      │     │
+│   │ Handler: dist/workers/scheduled-alerts.worker.handler        │     │
+│   └──────────────────────────────────────────────────────────────┘     │
+│                                                                        │
+│   ┌──────────────────────────────────────────────────────────────┐     │
+│   │ Amazon CloudWatch Log Groups (/aws/lambda/weatherly-dev-*)   │     │
+│   │ Explicit log groups with configurable retention (14 days)    │     │
+│   └──────────────────────────────────────────────────────────────┘     │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+### 1. Terraform Structure
+
+```text
+infra/terraform/
+├── versions.tf                          # Terraform >= 1.5.0, AWS >= 5.0, Archive >= 2.4, local state
+├── providers.tf                         # AWS provider with region and default resource tags
+├── variables.tf                         # Input variables, defaults, validation, and sensitivity flags
+├── locals.tf                            # Naming prefixes, computed tags, and build artifact paths
+├── main.tf                              # Archive packaging (../../backend/dist -> lambda-package.zip)
+├── dynamodb.tf                          # DynamoDB single-table with GSI1, PITR, KMS, and TTL
+├── iam.tf                               # Least-privilege IAM execution roles and inline policies
+├── lambda.tf                            # API Lambda + Function URL & Worker Lambda configuration
+├── eventbridge.tf                       # Scheduled EventBridge rule, target, and invoke permissions
+├── cloudwatch.tf                        # Explicit CloudWatch log groups with retention policies
+├── outputs.tf                           # Exported Function URL, Lambda ARNs, and table identifiers
+├── .gitignore                           # Ignores .terraform, *.tfstate, crash logs, and *.tfvars
+└── environments/
+    └── dev/
+        └── terraform.tfvars.example     # Sample environment configuration template
+```
+
+### 2. Resources Provisioned
+
+| Resource Type | Resource Identifier | Purpose & Specifications |
+|---|---|---|
+| `aws_dynamodb_table` | `${project}-${env}-alerts` | Single-table storage; `PAY_PER_REQUEST` billing; KMS encryption; PITR enabled; TTL on `ttl`; Sparse GSI1 (`ALERT#ENABLED`). |
+| `aws_lambda_function` | `${project}-${env}-api` | Express API handler (`dist/lambda.handler`); Node.js 20.x runtime; 512 MB memory; 15s timeout. |
+| `aws_lambda_function_url` | `${project}-${env}-api-url` | Direct HTTPS entrypoint (`AuthType: NONE`); CORS configured for frontend domain and localhost. |
+| `aws_lambda_function` | `${project}-${env}-scheduled-worker` | Scheduled alert evaluation worker (`dist/workers/scheduled-alerts.worker.handler`); 256 MB memory; 60s timeout. |
+| `aws_cloudwatch_event_rule` | `${project}-${env}-worker-schedule` | EventBridge periodic schedule (default: `rate(1 hour)`). |
+| `aws_cloudwatch_event_target` | `${project}-${env}-worker-target` | Dispatches EventBridge trigger directly to the scheduled worker Lambda. |
+| `aws_lambda_permission` | `${project}-${env}-worker-permission` | Grants `events.amazonaws.com` permission to invoke the worker Lambda. |
+| `aws_cloudwatch_log_group` | `/aws/lambda/${project}-${env}-api` | Dedicated logging destination; 14-day retention (prevents runaway storage). |
+| `aws_cloudwatch_log_group` | `/aws/lambda/${project}-${env}-scheduled-worker` | Dedicated worker logging destination; 14-day retention. |
+| `aws_iam_role` & `aws_iam_policy` | `${project}-${env}-api-role` | API Lambda execution role; allows CloudWatch logging to specific group ARN; allows DynamoDB operations strictly on base table (`USER#*`). |
+| `aws_iam_role` & `aws_iam_policy` | `${project}-${env}-worker-role` | Worker execution role; allows CloudWatch logging to worker group ARN; allows GSI1 query and deduplication record writes (`EVAL#*`). |
+
+### 3. Least-Privilege IAM Security Model
+
+- **No Managed Admin Policies:** Custom inline policies are attached directly to execution roles.
+- **Strictly Scoped ARNs:** CloudWatch logging permissions (`logs:CreateLogStream`, `logs:PutLogEvents`) are locked down to the exact log group ARN. DynamoDB permissions are strictly bounded to the table ARN and index ARN (`${aws_dynamodb_table.alerts.arn}/index/GSI1`).
+- **Worker Isolation:** The Scheduled Worker Lambda is only granted `dynamodb:Query` on GSI1 and base table, and `dynamodb:GetItem`/`dynamodb:PutItem` for deduplication records. It cannot scan or wipe user tables.
+- **API Isolation:** The API Lambda has no permission to query GSI1 or modify system-wide configurations.
+
+### 4. Configuration Variables & Secrets
+
+Input variables are defined in `variables.tf`. For deployment, copy the example file:
+
+```bash
+cp infra/terraform/environments/dev/terraform.tfvars.example infra/terraform/environments/dev/terraform.tfvars
+```
+
+Key variables configured in `terraform.tfvars`:
+- `aws_region`: AWS target region (default: `us-east-1`).
+- `environment`: Deployment stage (default: `dev`).
+- `project_name`: Resource naming prefix (default: `weatherly`).
+- `frontend_origin`: Allowed CORS origin for the frontend (e.g. `https://weatherly.example.com`).
+- `auth0_domain`: Auth0 tenant domain for JWT verification (e.g. `dev-tenant.us.auth0.com`).
+- `auth0_audience`: Auth0 API audience identifier (e.g. `https://weather-analytics-api`).
+- `gemini_api_key`: (Optional, `sensitive = true`) Google Gemini API key for AI Copilot. Defaults to `""` (copilot uses deterministic fallback).
+- `gemini_model`: Generative AI model name (default: `gemini-1.5-flash`).
+- `worker_schedule_expression`: EventBridge schedule rate/cron (default: `rate(1 hour)`).
+
+### 5. Deployment & Lifecycle Commands
+
+Before planning or deploying, build the backend distribution artifacts:
+```bash
+# 1. Build backend TypeScript source into dist/
+cd backend
+npm run build
+cd ..
+
+# 2. Initialize Terraform and download providers
+cd infra/terraform
+terraform init
+
+# 3. Format & validate configuration
+terraform fmt -check
+terraform validate
+
+# 4. Generate and inspect an execution plan
+terraform plan -var-file=environments/dev/terraform.tfvars -out=tfplan
+
+# 5. Apply the plan to provision resources
+terraform apply tfplan
+
+# 6. Retrieve outputs (API URL, table name, ARNs)
+terraform output
+```
+
+### 6. Cleanup & Resource Teardown
+
+To tear down all provisioned cloud resources cleanly:
+```bash
+cd infra/terraform
+terraform destroy -var-file=environments/dev/terraform.tfvars
+```
+This cleanly removes all Lambda functions, Function URLs, EventBridge rules, CloudWatch log groups, and DynamoDB tables.
+
+### 7. Cost Estimation (AWS Free Tier Optimization)
+
+Weatherly's serverless architecture is designed to operate within the **AWS Free Tier** and incur **$0 / month when idle**:
+
+- **DynamoDB:** `PAY_PER_REQUEST` (on-demand) billing incurs zero cost when not in use. AWS Free Tier includes 25 GB of storage, 25 WCU, and 25 RCU perpetually.
+- **AWS Lambda:** 1,000,000 free requests per month and 3,200,000 seconds of compute time per month perpetually.
+- **Lambda Function URLs:** Function URLs have **$0 additional charge** (unlike API Gateway HTTP/REST APIs which charge after free tier). You only pay for standard Lambda execution time and data transfer.
+- **Amazon EventBridge:** Scheduled rules (1 rule running every hour = ~720 invocations/month) are well within the perpetually free limit.
+- **Amazon CloudWatch Logs:** 5 GB of ingestion and 5 GB of storage are included free perpetually. Log groups have a 14-day TTL retention to ensure older logs are automatically expunged.
+
+### 8. State Management Strategy & Remote Migration
+
+By default, Terraform is configured with a **local backend** (`terraform.tfstate` in `infra/terraform/`), making it frictionless to test and validate without requiring prior AWS bootstrapping.
+
+#### Migrating to Remote S3 + DynamoDB Locking:
+For production multi-developer workflows, migrate state to Amazon S3 with DynamoDB state locking by updating `infra/terraform/versions.tf`:
+
+```hcl
+terraform {
+  backend "s3" {
+    bucket         = "your-terraform-state-bucket"
+    key            = "weatherly/dev/terraform.tfstate"
+    region         = "us-east-1"
+    dynamodb_table = "terraform-locks"
+    encrypt        = true
+  }
+}
+```
+Run `terraform init -migrate-state` to migrate existing local state into S3.
+
+---
+
 ## Environment Configuration
 
 ### Backend (`backend/.env`)
@@ -293,8 +472,8 @@ Weather forecast data and geocoding services are provided by **[Open-Meteo](http
 
 1. **Lambda In-Memory Cache Life-Cycle:**
    - Caching currently operates in-process using `node-cache` per Lambda warm container instance. Across horizontal Lambda scalings or cold starts, cache entries do not persist. Centralized DynamoDB and Redis caching are slated for upcoming Day 3 milestones.
-2. **Cloud Infrastructure:**
-   - The backend is now fully Lambda-ready with `@codegenie/serverless-express` (`dist/lambda.handler`). Infrastructure as code (Terraform/CDK) and DynamoDB tables will be provisioned in subsequent Day 3 milestones.
+2. **Cloud Infrastructure & Provisioning:**
+   - Serverless infrastructure is fully automated with Terraform (`infra/terraform/`), including DynamoDB with GSI1, API Lambda with Function URL, scheduled EventBridge alerts worker, and CloudWatch log groups. Automated CI/CD deployment pipelines (GitHub Actions) can be layered on top in subsequent milestones.
 3. **Offline / Service Worker Support:**
    - Client requires an active internet connection for real-time forecast and search updates. Progressive Web App (PWA) offline caching is slated for future enhancement.
 4. **Geocoding Disambiguation:**

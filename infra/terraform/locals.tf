@@ -1,0 +1,17 @@
+locals {
+  name_prefix = "${var.project_name}-${var.environment}"
+
+  common_tags = {
+    Project     = var.project_name
+    Environment = var.environment
+    ManagedBy   = "Terraform"
+  }
+
+  api_lambda_name     = "${local.name_prefix}-api"
+  worker_lambda_name  = "${local.name_prefix}-scheduled-worker"
+  dynamodb_table_name = "${local.name_prefix}-alerts"
+  dynamodb_gsi_name   = "GSI1"
+
+  # Path to deployment package
+  lambda_package_file = var.lambda_package_path != "" ? var.lambda_package_path : data.archive_file.backend_package.output_path
+}
