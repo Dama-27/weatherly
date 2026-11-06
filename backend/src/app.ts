@@ -6,6 +6,7 @@ import locationRouter from './routes/location.routes';
 import cacheRouter from './routes/cache.router';
 import assistantRouter from './routes/assistant.routes';
 import alertRouter from './routes/alert.routes';
+import { requestLoggerMiddleware } from './middleware/request-logger.middleware';
 
 export interface AppOptions {
   corsOrigin?: string | string[] | boolean;
@@ -22,6 +23,9 @@ export interface AppOptions {
  */
 export function createApp(options?: AppOptions): Application {
   const app = express();
+
+  // CloudWatch structured logging and correlation ID tracking
+  app.use(requestLoggerMiddleware);
 
   // Configure CORS
   const configuredOrigin = options?.corsOrigin ?? env.frontendOrigin;

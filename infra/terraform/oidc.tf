@@ -262,7 +262,43 @@ resource "aws_iam_role_policy" "github_actions_deploy" {
         }
       },
 
-      # 9. Caller Identity Context Check
+      # 9. CloudWatch Metric Alarms Management
+      {
+        Sid    = "CloudWatchAlarmsManagement"
+        Effect = "Allow"
+        Action = [
+          "cloudwatch:PutMetricAlarm",
+          "cloudwatch:DescribeAlarms",
+          "cloudwatch:DeleteAlarms",
+          "cloudwatch:ListTagsForResource",
+          "cloudwatch:TagResource",
+          "cloudwatch:UntagResource"
+        ]
+        Resource = [
+          "arn:aws:cloudwatch:${var.aws_region}:${data.aws_caller_identity.current.account_id}:alarm:${local.name_prefix}-*"
+        ]
+      },
+
+      # 10. SQS Dead-Letter Queue Management
+      {
+        Sid    = "SQSDLQManagement"
+        Effect = "Allow"
+        Action = [
+          "sqs:CreateQueue",
+          "sqs:GetQueueAttributes",
+          "sqs:SetQueueAttributes",
+          "sqs:DeleteQueue",
+          "sqs:TagQueue",
+          "sqs:UntagQueue",
+          "sqs:ListQueueTags",
+          "sqs:GetQueueUrl"
+        ]
+        Resource = [
+          "arn:aws:sqs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:${local.worker_lambda_name}-dlq"
+        ]
+      },
+
+      # 11. Caller Identity Context Check
       {
         Sid    = "STSCallerIdentity"
         Effect = "Allow"

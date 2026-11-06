@@ -5,6 +5,7 @@ import { createWeatherProvider } from '../providers/weather-provider.factory';
 import { getAlertRepository } from '../repositories/alert-repository.factory';
 import { evaluateAlertRules } from '../services/weather-alert.service';
 import type { AlertLocation, AlertRule } from '../types/weather-alert.types';
+import { logger } from '../common/logger';
 
 export interface ScheduledWorkerResult {
   status: 'completed' | 'failed';
@@ -17,6 +18,13 @@ export interface ScheduledWorkerResult {
 }
 
 const DEFAULT_BATCH_LIMIT = 200;
+
+export interface ScheduledWorkerOptions {
+  limit?: number;
+  repository?: ReturnType<typeof getAlertRepository>;
+  correlationId?: string;
+  requestId?: string;
+}
 
 /**
  * AWS Lambda Scheduled Event Worker.
@@ -31,11 +39,14 @@ const DEFAULT_BATCH_LIMIT = 200;
  * 5. Applies duplicate suppression via repository.hasEvaluationRecord() before saving.
  * 6. Records triggered evaluation events with 7-day TTL for audit and deduplication.
  * 7. Isolates failures: If one city's weather API fails, other cities continue processing.
+ * 8. Emits CloudWatch JSON structured logs with correlation ID, duration, and error categories.
  */
 export async function executeScheduledAlertEvaluation(
-  options?: { limit?: number; repository?: ReturnType<typeof getAlertRepository> }
+  options?: ScheduledWorkerOptions
 ): Promise<ScheduledWorkerResult> {
   const startTime = Date.now();
+  const correlationId = options?.correlationId || logger.generateCorrelationId();
+  const requestId = options?.requestId;
   const repo = options?.repository || getAlertRepository();
   const weatherProvider = createWeatherProvider(env.weatherProvider);
   const limit = options?.limit || DEFAULT_BATCH_LIMIT;
@@ -51,15 +62,22 @@ export async function executeScheduledAlertEvaluation(
 
   if (enabledRules.length === 0) {
     const durationMs = Date.now() - startTime;
-    console.log(
-      JSON.stringify({
-        worker: 'ScheduledAlertsWorker',
-        status: 'completed',
-        durationMs,
+    logger.info({
+      service: 'weatherly-worker',
+      operation: 'ScheduledAlertEvaluation',
+      correlationId,
+      requestId,
+      durationMs,
+      status: 'success',
+      metadata: {
         processedAlerts: 0,
+        triggeredAlerts: 0,
+        deduplicatedAlerts: 0,
+        locationsEvaluated: 0,
         message: 'No enabled alerts found to evaluate.',
-      })
-    );
+      },
+    });
+
     return {
       status: 'completed',
       durationMs,
@@ -140,10 +158,25 @@ export async function executeScheduledAlertEvaluation(
     } catch (locErr: any) {
       // Partial failure isolation: log and record error, but continue remaining locations
       const errorMessage = locErr?.message || 'Failed to fetch weather or evaluate alerts';
-      console.error(
-        `[ScheduledAlertsWorker] Error evaluating location "${location.name}":`,
-        errorMessage
-      );
+      const isTimeout = errorMessage.toLowerCase().includes('timeout');
+      const errorCategory = isTimeout ? 'UpstreamTimeout' : 'UpstreamHttpError';
+
+      logger.warn({
+        service: 'weatherly-worker',
+        operation: 'EvaluateLocationAlerts',
+        correlationId,
+        requestId,
+        status: 'warn',
+        errorCategory,
+        errorMessage,
+        metadata: {
+          location: location.name,
+          latitude: location.latitude,
+          longitude: location.longitude,
+          ruleCount: rules.length,
+        },
+      });
+
       errors.push({
         location: location.name,
         error: errorMessage,
@@ -152,8 +185,11 @@ export async function executeScheduledAlertEvaluation(
   }
 
   const durationMs = Date.now() - startTime;
+  const isAllFailed = errors.length > 0 && errors.length === locationGroups.size;
+  const workerStatus = isAllFailed ? 'error' : errors.length > 0 ? 'warn' : 'success';
+
   const result: ScheduledWorkerResult = {
-    status: 'completed',
+    status: isAllFailed ? 'failed' : 'completed',
     durationMs,
     processedAlerts,
     triggeredAlerts,
@@ -162,12 +198,22 @@ export async function executeScheduledAlertEvaluation(
     errors,
   };
 
-  console.log(
-    JSON.stringify({
-      worker: 'ScheduledAlertsWorker',
-      ...result,
-    })
-  );
+  logger.info({
+    service: 'weatherly-worker',
+    operation: 'ScheduledAlertEvaluation',
+    correlationId,
+    requestId,
+    durationMs,
+    status: workerStatus,
+    errorCategory: errors.length > 0 ? 'PartialLocationFailure' : undefined,
+    metadata: {
+      processedAlerts,
+      triggeredAlerts,
+      deduplicatedAlerts,
+      locationsEvaluated: locationGroups.size,
+      errorCount: errors.length,
+    },
+  });
 
   return result;
 }
@@ -176,13 +222,19 @@ export async function executeScheduledAlertEvaluation(
  * Standard AWS Lambda Handler for EventBridge Scheduled Events.
  */
 export const handler: Handler<any, ScheduledWorkerResult> = async (
-  _event: any,
+  event: any,
   context?: Context
 ): Promise<ScheduledWorkerResult> => {
   if (context) {
     context.callbackWaitsForEmptyEventLoop = false;
   }
-  return executeScheduledAlertEvaluation();
+
+  return executeScheduledAlertEvaluation({
+    requestId: context?.awsRequestId,
+    correlationId: event?.['detail-type']
+      ? `eventbridge-${context?.awsRequestId || randomUUID()}`
+      : undefined,
+  });
 };
 
 export default handler;

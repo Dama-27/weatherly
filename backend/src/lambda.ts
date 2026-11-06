@@ -44,6 +44,15 @@ export const handler: Handler<any, any> = async (
 ): Promise<any> => {
   // Prevent Lambda execution timeout if background Node timers remain active
   context.callbackWaitsForEmptyEventLoop = false;
+
+  // Propagate Lambda Request ID to incoming Express headers for request logging
+  if (event && context?.awsRequestId) {
+    event.headers = event.headers || {};
+    if (!event.headers['x-amzn-requestid']) {
+      event.headers['x-amzn-requestid'] = context.awsRequestId;
+    }
+  }
+
   return serverlessExpressInstance(event, context, callback || noopCallback);
 };
 

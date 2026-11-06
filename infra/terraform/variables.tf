@@ -162,3 +162,37 @@ variable "github_environment" {
   type        = string
   default     = "production"
 }
+
+# -----------------------------------------------------------------------------
+# CloudWatch Metrics & Production Alarms
+# -----------------------------------------------------------------------------
+
+variable "enable_cloudwatch_alarms" {
+  description = "Whether to provision CloudWatch metric alarms for Lambda, DynamoDB, and worker reliability"
+  type        = bool
+  default     = true
+}
+
+variable "alarm_sns_topic_arn" {
+  description = "Optional SNS topic ARN to receive CloudWatch alarm notifications (leave empty if not routing to email/pager)"
+  type        = string
+  default     = ""
+}
+
+variable "api_error_threshold" {
+  description = "Threshold for API Lambda unhandled errors in a 5-minute evaluation period"
+  type        = number
+  default     = 1
+}
+
+variable "worker_error_threshold" {
+  description = "Threshold for Scheduled Worker Lambda unhandled errors in a 5-minute evaluation period"
+  type        = number
+  default     = 1
+}
+
+variable "duration_threshold_ratio" {
+  description = "Ratio of function timeout (0.0 - 1.0) before triggering a duration approaching timeout alarm"
+  type        = number
+  default     = 0.8
+}

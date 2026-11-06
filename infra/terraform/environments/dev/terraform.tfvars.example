@@ -28,6 +28,13 @@ worker_schedule_expression = "rate(1 hour)"
 log_retention_days            = 14
 enable_point_in_time_recovery = true
 
+# CloudWatch Observability & Alarms
+enable_cloudwatch_alarms = true
+# alarm_sns_topic_arn    = "arn:aws:sns:us-east-1:123456789012:weatherly-ops-alerts" # Optional notification SNS topic
+api_error_threshold      = 1
+worker_error_threshold   = 1
+duration_threshold_ratio = 0.8
+
 # Frontend Hosting (S3 + CloudFront)
 # frontend_bucket_name    = "weatherly-dev-frontend-123456789012" # Optional: defaults to weatherly-dev-frontend-<account-id>
 cloudfront_price_class  = "PriceClass_100"                      # PriceClass_100 (US/Europe) minimizes cost

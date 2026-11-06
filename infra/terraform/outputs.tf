@@ -100,3 +100,17 @@ output "github_oidc_provider_arn" {
   description = "ARN of the GitHub OIDC provider"
   value       = local.github_oidc_provider_arn
 }
+
+# -----------------------------------------------------------------------------
+# Observability & Reliability (CloudWatch & SQS DLQ)
+# -----------------------------------------------------------------------------
+
+output "worker_dlq_arn" {
+  description = "ARN of the SQS Dead-Letter Queue for failed EventBridge worker events"
+  value       = aws_sqs_queue.worker_dlq.arn
+}
+
+output "worker_dlq_url" {
+  description = "URL of the SQS Dead-Letter Queue for failed EventBridge worker events"
+  value       = aws_sqs_queue.worker_dlq.id
+}

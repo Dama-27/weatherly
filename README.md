@@ -214,27 +214,37 @@ Weatherly includes a complete, production-ready Terraform configuration under `i
 │                  │ SigV4 Signed        ┌───────────────────────────────────────────┐   │
 │                  │ via OAC             │ API Lambda: weatherly-dev-api             │   │
 │                  ▼                     │ Handler: dist/lambda.handler              │   │
-│   ┌──────────────────────────────┐     └─────────────┬─────────────────────┬───────┘   │
-│   │ Private S3 Frontend Bucket   │                   │                     │           │
-│   │ - Block Public Access: TRUE  │                   │ Open-Meteo & Gemini │ Read/Write│
-│   │ - SSE-S3 AES-256 Encryption  │                   ▼                     ▼           │
-│   │ - Versioning & Lifecycle Exp │     ┌────────────────────────┐ ┌──────────────────┐ │
-│   └──────────────────────────────┘     │ External APIs          │ │ DynamoDB Table   │ │
-│                                        │ - Open-Meteo Forecast  │ │ weatherly-dev-   │ │
-│   ┌──────────────────────────────┐     │ - Google Gemini (Opt)  │ │ alerts           │ │
-│   │ EventBridge Rule             │     └────────────────────────┘ │ - Single-Table   │ │
-│   │ rate(1 hour)                 │                                │ - GSI1 Sparse    │ │
-│   └──────────────┬───────────────┘                                │ - KMS, PITR, TTL │ │
-│                  │ Periodic Trigger                               └────────▲─────────┘ │
-│                  ▼                                                         │           │
+│   ┌──────────────────────────────┐     │ - CloudWatch Structured JSON Logger       │   │
+│   │ Private S3 Frontend Bucket   │     │ - Request Correlation ID (X-Correlation)  │   │
+│   │ - Block Public Access: TRUE  │     └─────────────┬─────────────────────┬───────┘   │
+│   │ - SSE-S3 AES-256 Encryption  │                   │                     │           │
+│   │ - Versioning & Lifecycle Exp │                   │ Open-Meteo & Gemini │ Read/Write│
+│   └──────────────────────────────┘                   ▼                     ▼           │
+│                                        ┌────────────────────────┐ ┌──────────────────┐ │
+│   ┌──────────────────────────────┐     │ External APIs          │ │ DynamoDB Table   │ │
+│   │ EventBridge Scheduled Rule   │     │ - Open-Meteo Forecast  │ │ weatherly-dev-   │ │
+│   │ - rate(1 hour)               │     │ - Google Gemini (Opt)  │ │ alerts           │ │
+│   │ - 2x Retry Policy            │     └────────────────────────┘ │ - Single-Table   │ │
+│   └──────────────┬───────────────┘                                │ - GSI1 Sparse    │ │
+│                  │ Periodic Trigger                               │ - KMS, PITR, TTL │ │
+│                  ▼                                                └────────▲─────────┘ │
 │   ┌────────────────────────────────────────────────────────────────────────┴───────┐   │
 │   │ Scheduled Worker Lambda: weatherly-dev-scheduled-worker                        │   │
 │   │ Handler: dist/workers/scheduled-alerts.worker.handler                          │   │
-│   └────────────────────────────────────────────────────────────────────────────────┘   │
+│   │ - Partial Failure Isolation & Deduplication                                    │   │
+│   └──────────────┬─────────────────────────────────────────────────────────────────┘   │
+│                  │ On Persistent Failure (2 Retries Exceeded)                          │
+│                  ▼                                                                     │
+│   ┌──────────────────────────────┐                                                     │
+│   │ SQS Dead-Letter Queue (DLQ)  │                                                     │
+│   │ weatherly-dev-worker-dlq     │                                                     │
+│   │ - 14-Day Message Retention   │                                                     │
+│   └──────────────────────────────┘                                                     │
 │                                                                                        │
 │   ┌────────────────────────────────────────────────────────────────────────────────┐   │
-│   │ Amazon CloudWatch Log Groups (/aws/lambda/weatherly-dev-*)                     │   │
-│   │ Explicit log groups with configurable retention (14 days)                      │   │
+│   │ CloudWatch Observability & Operational Alarms                                  │   │
+│   │ - Structured JSON Logs (/aws/lambda/weatherly-dev-*) with 14-day retention     │   │
+│   │ - Metric Alarms: Errors, Throttles, Duration (>80% timeout), DynamoDB, DLQ    │   │
 │   └────────────────────────────────────────────────────────────────────────────────┘   │
 └────────────────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -251,11 +261,13 @@ infra/terraform/
 ├── dynamodb.tf                          # DynamoDB single-table with GSI1, PITR, KMS, and TTL
 ├── iam.tf                               # Least-privilege IAM execution roles and inline policies
 ├── lambda.tf                            # API Lambda + Function URL & Worker Lambda configuration
-├── eventbridge.tf                       # Scheduled EventBridge rule, target, and invoke permissions
-├── cloudwatch.tf                        # Explicit CloudWatch log groups with retention policies
+├── eventbridge.tf                       # Scheduled EventBridge rule, 2x retry policy, target, and SQS DLQ
+├── cloudwatch.tf                        # Explicit CloudWatch log groups with 14-day retention policies
+├── cloudwatch_alarms.tf                 # Operational metric alarms (Errors, Throttles, Duration, DynamoDB, DLQ)
 ├── s3_frontend.tf                       # Private frontend S3 bucket, encryption, versioning & OAC policy
 ├── cloudfront.tf                        # CloudFront OAC, cache policies, distribution & SPA routing
-├── outputs.tf                           # Exported Function URL, CloudFront URL, ARNs, and table identifiers
+├── oidc.tf                              # GitHub Actions OIDC provider, scoped trust policy & deployment role
+├── outputs.tf                           # Exported URLs, ARNs, table identifiers, and DLQ attributes
 ├── .gitignore                           # Ignores .terraform, *.tfstate, crash logs, and *.tfvars
 └── environments/
     └── dev/
@@ -280,12 +292,23 @@ infra/terraform/
 | `aws_lambda_function_url` | `${project}-${env}-api-url` | Direct HTTPS entrypoint (`AuthType: NONE`); CORS automatically authorizes provisioned CloudFront domain. |
 | `aws_lambda_function` | `${project}-${env}-scheduled-worker` | Scheduled alert evaluation worker (`dist/workers/scheduled-alerts.worker.handler`); 256 MB memory; 60s timeout. |
 | `aws_cloudwatch_event_rule` | `${project}-${env}-worker-schedule` | EventBridge periodic schedule (default: `rate(1 hour)`). |
-| `aws_cloudwatch_event_target` | `${project}-${env}-worker-target` | Dispatches EventBridge trigger directly to the scheduled worker Lambda. |
+| `aws_cloudwatch_event_target` | `${project}-${env}-worker-target` | Dispatches EventBridge trigger directly to the scheduled worker Lambda with a 2x retry policy. |
+| `aws_sqs_queue` | `${project}-${env}-worker-dlq` | SQS Dead-Letter Queue capturing failed worker executions after retries are exhausted (14-day retention). |
 | `aws_lambda_permission` | `${project}-${env}-worker-permission` | Grants `events.amazonaws.com` permission to invoke the worker Lambda. |
 | `aws_cloudwatch_log_group` | `/aws/lambda/${project}-${env}-api` | Dedicated logging destination; 14-day retention (prevents runaway storage). |
 | `aws_cloudwatch_log_group` | `/aws/lambda/${project}-${env}-scheduled-worker` | Dedicated worker logging destination; 14-day retention. |
+| `aws_cloudwatch_metric_alarm` | `api-unhandled-errors` | Alarms when API Lambda encounters unhandled exceptions (threshold: >= 1 in 5 mins). |
+| `aws_cloudwatch_metric_alarm` | `worker-unhandled-errors` | Alarms when Scheduled Worker Lambda encounters unhandled exceptions (threshold: >= 1 in 5 mins). |
+| `aws_cloudwatch_metric_alarm` | `api-throttles` | Alarms when API Lambda invocations are throttled by concurrency limits. |
+| `aws_cloudwatch_metric_alarm` | `worker-throttles` | Alarms when Scheduled Worker invocations are throttled. |
+| `aws_cloudwatch_metric_alarm` | `api-duration-approaching-timeout` | Alarms when API Lambda duration exceeds 80% of timeout (12s of 15s). |
+| `aws_cloudwatch_metric_alarm` | `worker-duration-approaching-timeout` | Alarms when Worker Lambda duration exceeds 80% of timeout (48s of 60s). |
+| `aws_cloudwatch_metric_alarm` | `dynamodb-throttled-requests` | Alarms when DynamoDB read or write requests are throttled. |
+| `aws_cloudwatch_metric_alarm` | `worker-dlq-messages` | Alarms when any dropped message arrives in the SQS Dead-Letter Queue. |
 | `aws_iam_role` & `aws_iam_policy` | `${project}-${env}-api-role` | API Lambda execution role; allows CloudWatch logging to specific group ARN; allows DynamoDB operations strictly on base table (`USER#*`). |
 | `aws_iam_role` & `aws_iam_policy` | `${project}-${env}-worker-role` | Worker execution role; allows CloudWatch logging to worker group ARN; allows GSI1 query and deduplication record writes (`EVAL#*`). |
+| `aws_iam_openid_connect_provider` | `github-actions-oidc-provider` | GitHub OIDC identity provider (`token.actions.githubusercontent.com`). |
+| `aws_iam_role` & `aws_iam_policy` | `github-actions-deploy-role` | Scoped CI/CD deployment role restricted strictly to `repo:Dama-27/weatherly:ref:refs/heads/main`. |
 
 ### 3. Frontend Cache & Invalidation Strategy
 
@@ -540,6 +563,132 @@ To activate automated deployment in your repository:
   - Ensure all required secrets (`AUTH0_DOMAIN`, `AUTH0_AUDIENCE`) are populated in GitHub repository secrets.
 - **Frontend S3 Access Denied (403):**
   - Verify that CloudFront OAC is attached and the S3 bucket policy references the exact CloudFront distribution ARN.
+
+---
+
+## Production Observability, Monitoring & Operations
+
+Weatherly incorporates enterprise-grade operational instrumentation designed for AWS serverless execution, providing deep visibility while guaranteeing data privacy and security.
+
+### 1. CloudWatch Structured JSON Logging
+
+Both the Express API Lambda and Scheduled Worker Lambda output uniform, single-line JSON logs directly to CloudWatch Logs:
+
+```json
+{
+  "timestamp": "2026-11-06T12:00:00.123Z",
+  "level": "INFO",
+  "service": "weatherly-api",
+  "correlationId": "5d13bf4a-e9e7-4af4-8a82-794bc372beab",
+  "requestId": "c1234567-89ab-cdef-0123-456789abcdef",
+  "operation": "GET /api/weather/current",
+  "durationMs": 42,
+  "status": "success",
+  "statusCode": 200,
+  "metadata": {
+    "method": "GET",
+    "path": "/weather/current",
+    "query": { "lat": "6.93", "lon": "79.86" }
+  }
+}
+```
+
+#### Key Capabilities:
+- **Request Tracing:** Propagates `X-Correlation-Id` across frontend API requests, Lambda handlers, and internal services.
+- **Lambda Request ID:** Extracts and logs `context.awsRequestId` for immediate correlation with AWS Lambda runtime logs.
+- **Categorized Error Telemetry:** When failures occur, logs classify errors into standardized operational categories (`ValidationError`, `AuthenticationError`, `AuthorizationError`, `NotFoundError`, `RateLimitError`, `UpstreamTimeout`, `UpstreamHttpError`, `StorageError`, `InternalError`).
+- **Privacy & Security Redaction:**
+  - JWT tokens are automatically detected and replaced with `[REDACTED_JWT]`.
+  - Sensitive HTTP headers (`authorization`, `cookie`, `set-cookie`) are scrubbed before logging.
+  - Query parameters and request payload keys matching passwords, secrets, API keys, or tokens are masked as `[REDACTED]`.
+  - User personal identifying information (PII) is never logged.
+
+### 2. Operational CloudWatch Metric Alarms
+
+Provisioned via `infra/terraform/cloudwatch_alarms.tf`:
+
+| Metric Alarm | Target Resource | Threshold & Period | Operational Meaning |
+|---|---|---|---|
+| **`api-unhandled-errors`** | `weatherly-dev-api` | Sum $\ge 1$ (5 mins) | Detects unhandled exceptions, crashes, or 500-series server faults. |
+| **`worker-unhandled-errors`** | `weatherly-dev-scheduled-worker` | Sum $\ge 1$ (5 mins) | Flags unexpected errors in the background alert evaluation worker. |
+| **`api-throttles`** | `weatherly-dev-api` | Sum $\ge 1$ (5 mins) | Detects API traffic exceeding AWS account concurrency limits. |
+| **`worker-throttles`** | `weatherly-dev-scheduled-worker` | Sum $\ge 1$ (5 mins) | Flags worker execution throttling. |
+| **`api-duration-approaching-timeout`** | `weatherly-dev-api` | Max $\ge 12\text{s}$ (80% of 15s) | Warns when API latency risks timing out before response dispatch. |
+| **`worker-duration-approaching-timeout`** | `weatherly-dev-scheduled-worker` | Max $\ge 48\text{s}$ (80% of 60s) | Warns when batch evaluation duration approaches the worker execution ceiling. |
+| **`dynamodb-throttled-requests`** | `weatherly-dev-alerts` | Sum $\ge 1$ (5 mins) | Identifies partition hotspotting or burst throttling on the DynamoDB table. |
+| **`worker-dlq-messages`** | `weatherly-dev-worker-dlq` | Sum $\ge 1$ (5 mins) | Alerts on dropped events landing in the Dead-Letter Queue after 2 retries. |
+
+*Alarm notifications can be routed directly to an operational email or pager by configuring `alarm_sns_topic_arn` in `terraform.tfvars`.*
+
+### 3. Reliability & Dead-Letter Handling
+
+- **EventBridge Retry Policy:** The scheduled rule retries failed worker dispatches up to 2 times within 1 hour (`maximum_retry_attempts = 2`, `maximum_event_age_in_seconds = 3600`).
+- **SQS Dead-Letter Queue (DLQ):** If retries are exhausted, dropped events are preserved in `weatherly-dev-worker-dlq` with 14-day retention for post-mortem analysis.
+- **Upstream Timeouts & Circuit Breaking:** Open-Meteo requests enforce an 8-second timeout (`AbortSignal.timeout(8000)`) with clear 504 Gateway Timeout error mappings.
+- **Graceful AI Fallback:** Google Gemini generative calls enforce strict timeouts (8000ms) and quota (429) guards, falling back instantaneously to deterministic rule-based evaluation without user disruption.
+- **DynamoDB Deduplication:** Checks `hasEvaluationRecord()` before persisting triggered alerts to eliminate duplicate browser notifications for the same forecast window.
+
+### 4. CloudWatch Logs Insights Queries
+
+Run these operational queries in the CloudWatch Logs console (`/aws/lambda/weatherly-dev-api`):
+
+#### Find Recent Application Errors:
+```sql
+fields @timestamp, correlationId, operation, statusCode, errorCategory, errorMessage
+| filter level = "ERROR" or statusCode >= 400
+| sort @timestamp desc
+| limit 50
+```
+
+#### Latency Percentiles (p50, p95, p99) by Endpoint:
+```sql
+fields operation, durationMs
+| stats count() as requests, pct(durationMs, 50) as p50, pct(durationMs, 95) as p95, pct(durationMs, 99) as p99, max(durationMs) as maxDuration by operation
+| sort requests desc
+```
+
+#### Track Worker Alert Evaluation Throughput:
+```sql
+fields @timestamp, metadata.processedAlerts, metadata.triggeredAlerts, metadata.deduplicatedAlerts, durationMs
+| filter service = "weatherly-worker" and status = "success"
+| sort @timestamp desc
+| limit 20
+```
+
+### 5. Production Security & Secrets Management
+
+- **Zero Secrets in Code:** No credentials or API keys are stored in source repositories.
+- **AWS Secrets Recommendation for Gemini API Key:**
+  For production deployments, store your Gemini API key in **AWS Systems Manager Parameter Store** as an encrypted `SecureString`:
+  ```bash
+  aws ssm put-parameter \
+    --name "/weatherly/prod/gemini_api_key" \
+    --value "your_actual_gemini_api_key" \
+    --type SecureString \
+    --overwrite
+  ```
+  Or in **AWS Secrets Manager**, referencing the parameter directly in Lambda environment variables or retrieving it during Lambda cold starts.
+- **Frontend Token Isolation:** Authentication tokens are stored exclusively in memory via `@auth0/auth0-react`. No tokens or sensitive user data are ever written to `localStorage`.
+- **S3 Public Access:** S3 bucket has all public access blocked; content is accessible strictly via CloudFront SigV4 Origin Access Control (OAC).
+
+### 6. Cost Management & Budgeting
+
+Weatherly is designed to operate within the **AWS Free Tier** and incur **$0 / month when idle**, but production workloads may incur charges when exceeding free tier limits:
+
+| AWS Service | Free Tier Allowance (Perpetual / 12-Mo) | Potential Billable Thresholds |
+|---|---|---|
+| **AWS Lambda** | 1,000,000 requests & 3,200,000 seconds / month | \$0.20 per 1M requests; \$0.0000166667 per GB-second |
+| **Amazon DynamoDB** | 25 GB storage, 25 WCU, 25 RCU | \$1.25 per 1M write units; \$0.25 per 1M read units |
+| **Amazon CloudFront** | 1 TB data transfer out & 10,000,000 HTTP/S requests / month | \$0.085/GB data transfer (US/Europe) |
+| **Amazon S3** | 5 GB storage, 20,000 GETs, 2,000 PUTs (First 12 months) | \$0.023 per GB-month storage |
+| **CloudWatch Logs** | 5 GB ingestion & 5 GB storage | \$0.50 per GB ingested |
+| **CloudWatch Alarms** | 10 standard metric alarms free | \$0.10 per alarm / month beyond 10 |
+
+#### AWS Budget Alert Setup:
+To prevent unexpected spend, configure an AWS Cost Budget in the AWS Billing Console:
+1. Navigate to **Billing and Cost Management** ➔ **Budgets** ➔ **Create budget**.
+2. Select **Cost budget** with a monthly threshold of **\$10.00**.
+3. Set alert thresholds at 80% (\$8.00) and 100% (\$10.00) notifying your operations email.
 
 ---
 
